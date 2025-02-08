@@ -15,10 +15,43 @@ from urllib3 import Retry
 import cv2
 from requests.adapters import HTTPAdapter
 from flask import Flask, request, Response, jsonify
+from concurrent.futures import ThreadPoolExecutor
 from flask_cors import CORS
+from weighted_intersection_graph import create_street_and_intersection_maps, fetch_street_network, create_coordinate_transformer, create_graph_from_streets
 
 app = Flask(__name__)
 CORS(app)
+
+os.makedirs("static", exist_ok=True)
+@app.route("/street_images", methods=["POST"])
+def street_images():
+    data = request.get_json()
+    if not data or "lat" not in data or "lon" not in data:
+        return jsonify({"error": "No JSON payload provided"}), 400
+
+    lat, lon = float(data["lat"]), float(data["lon"])
+
+    place = f"{lat},{lon}"
+
+    try:
+        intersections, road_path, inter_path, overlay_path = create_street_and_intersection_maps(
+            lat, lon, place=place
+        )
+        edges, nodes, bounds = fetch_street_network(lat, lon, dist=1000)
+        geo_to_pixel = create_coordinate_transformer(bounds, (800, 800))
+        street_graph = create_graph_from_streets(intersections, edges, geo_to_pixel, output_file=f"static/{place}_graph.json")
+    
+        return jsonify({
+            "latitude": lat,
+            "longitude": lon,
+            "road_image": road_path,
+            "intersection_image": inter_path,
+            "overlay_image": overlay_path,
+            "graph_json": f"static/{place}_graph.json"
+        })
+    except Exception as e:
+        return jsonify({"error": f"Failed to generate street images: {str(e)}"}), 500
+
 
 # ------------------------------------------------------------------------------
 # Global Model Loading (runs once at startup)
