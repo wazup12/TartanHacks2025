@@ -71,15 +71,61 @@ def create_graph_from_streets(intersections, edges, geo_to_pixel, output_file="g
     return G
 
 def draw_streets(edges, geo_to_pixel, image_size):
+    # Create empty images: one grayscale and one in color (BGR)
     road_img = np.zeros(image_size, dtype=np.uint8)
     overlay_img = np.zeros((*image_size, 3), dtype=np.uint8)
     
+    # Define a thickness map (you can adjust these values)
+    thickness_map = {
+        "motorway": 4,
+        "trunk": 3,
+        "primary": 2,
+        "secondary": 2,
+        "tertiary": 1,
+        "residential": 1,
+        "unclassified": 1,
+        "service": 1
+    }
+    
+    # Define a color map for the overlay image (BGR format)
+    color_map = {
+        "motorway": (0, 0, 255),      # Red
+        "trunk": (0, 165, 255),       # Orange
+        "primary": (0, 255, 0),       # Green
+        "secondary": (255, 255, 0),   # Cyan-ish
+        "tertiary": (255, 0, 255),    # Magenta
+        "residential": (200, 200, 200),  # Light gray
+        "unclassified": (150, 150, 150), # Medium gray
+        "service": (100, 100, 100)       # Dark gray
+    }
+    
     for _, row in edges.iterrows():
-        coords = np.array([geo_to_pixel(lon, lat) for lon, lat in row.geometry.coords], dtype=np.int32)
-        cv2.polylines(road_img, [coords], isClosed=False, color=255, thickness=1)
-        cv2.polylines(overlay_img, [coords], isClosed=False, color=(255, 255, 255), thickness=1)
+        # Convert geographic coordinates to pixel coordinates
+        coords = np.array(
+            [geo_to_pixel(lon, lat) for lon, lat in row.geometry.coords],
+            dtype=np.int32
+        )
+        
+        # Get the highway type (sometimes a list; take the first element if so)
+        highway_type = row.get("highway", "unclassified")
+        if isinstance(highway_type, list):
+            highway_type = highway_type[0]
+        
+        # Look up thickness and color; use defaults if not found
+        line_thickness = thickness_map.get(highway_type, thickness_map["unclassified"])
+        line_color = color_map.get(highway_type, color_map["unclassified"])
+        
+        # For the grayscale image, convert the BGR color to a grayscale intensity.
+        # One simple way is to take the average (or you could use a weighted conversion).
+        gray_intensity = int(sum(line_color) / 3)
+        
+        # Draw on the grayscale image
+        cv2.polylines(road_img, [coords], isClosed=False, color=gray_intensity, thickness=line_thickness)
+        # Draw on the color overlay image
+        cv2.polylines(overlay_img, [coords], isClosed=False, color=line_color, thickness=line_thickness)
     
     return road_img, overlay_img
+
 
 def save_images(road_img, intersection_img, overlay_img, dir="static/", place=""):
     rpath = f"{dir}{place}_road.png"
