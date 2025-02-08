@@ -1,0 +1,9 @@
+Flask
+numpy
+torch
+torchvision
+opencv-python
+requests
+urllib3
+timm
+
