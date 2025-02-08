@@ -14,6 +14,122 @@ ROAD_IMPORTANCE = {
     "tertiary": 1, "residential": 0.5, "unclassified": 0.5, "service": 0.3
 }
 
+import numpy as np
+import cv2
+from scipy.ndimage import distance_transform_edt
+import matplotlib.cm as cm
+
+def graph_to_heatmap_image(G, blur_kernel_size=(15, 15), blur_sigma=0):
+    """
+    Create a heatmap image from a graph by weighting edges according to their proximity
+    to fire. Edges that come closer to fire (as indicated by the fire mask) will be colored
+    with a “hotter” color. A Gaussian blur is applied to the entire image before returning.
+
+    Parameters:
+        G : networkx.Graph
+            A graph where each node has a 'pos' attribute (a tuple (x, y)) indicating its pixel location.
+        fire_mask : np.ndarray
+            A binary NumPy array of shape (500, 500) with 1 indicating fire and 0 indicating no fire.
+        blur_kernel_size : tuple (default (15, 15))
+            The kernel size for the Gaussian blur (both values should be odd numbers).
+        blur_sigma : float (default 0)
+            The sigma for the Gaussian blur. If 0, OpenCV will calculate it from the kernel size.
+            
+    Returns:
+        blurred_img : np.ndarray
+            An image (a NumPy array) of the drawn heatmap with Gaussian blur applied.
+    """
+    import numpy as np
+    from PIL import Image
+
+    def extract_bw_array_from_jpg(image_path, threshold=128):
+        """
+        Load an image, convert it to grayscale, and then produce a binary
+        numpy array (with values 1 and 0) based on a given threshold.
+
+        Parameters:
+            image_path (str): Path to the input JPG image.
+            threshold (int): Grayscale threshold (0-255) to decide between black and white.
+                            Default is 128.
+
+        Returns:
+            np.ndarray: 2D numpy array of 1s and 0s.
+        """
+        # Open the image and convert to grayscale ('L' mode)
+        with Image.open(image_path) as img:
+            gray_img = img.convert('L')
+        
+        # Convert the grayscale image to a numpy array
+        gray_array = np.array(gray_img)
+        
+        # Apply threshold: pixels >= threshold become 1, else 0.
+        bw_array = (gray_array >= threshold).astype(np.uint8)
+        
+        return bw_array
+
+    fire_mask = extract_bw_array_from_jpg("goated_mask.jpg")
+
+    # Compute the distance transform.
+    # Since fire_mask==1 indicates fire, we pass (1 - fire_mask) so that fire pixels become 0.
+    dt = distance_transform_edt(1 - fire_mask)
+    dt_max = dt.max() if dt.max() > 0 else 1  # prevent division by zero
+
+    # Get image dimensions from the fire_mask
+    height, width = fire_mask.shape
+    # Create a blank color image (black background)
+    img = np.zeros((height, width, 3), dtype=np.uint8)
+
+    # Process each edge in the graph
+    for u, v in G.edges():
+        pos1 = G.nodes[u]['pos']  # expected as (x, y)
+        pos2 = G.nodes[v]['pos']  # expected as (x, y)
+
+        # Determine the number of sample points along the edge based on its length.
+        num_samples = int(np.hypot(pos2[0] - pos1[0], pos2[1] - pos1[1])) + 1
+        num_samples = max(num_samples, 2)  # ensure at least two points
+
+        # Create linearly spaced points along the edge.
+        x_coords = np.linspace(pos1[0], pos2[0], num_samples)
+        y_coords = np.linspace(pos1[1], pos2[1], num_samples)
+
+        # For each sample point, get the distance transform value.
+        dt_values = []
+        for x, y in zip(x_coords, y_coords):
+            xi = int(round(x))
+            yi = int(round(y))
+            if 0 <= xi < width and 0 <= yi < height:
+                dt_values.append(dt[yi, xi])  # note: dt is indexed as [row, col] i.e. [y, x]
+            else:
+                dt_values.append(dt_max)  # if outside, assume maximum distance
+
+        # The edge’s proximity to fire is given by the smallest distance along the edge.
+        d_min = min(dt_values)
+        # Normalize the intensity so that an edge passing through fire (d_min=0) gets intensity 1.
+        intensity = 1 - (d_min / dt_max)
+        intensity = np.clip(intensity, 0, 1)
+
+        # Use a colormap to convert the intensity into a color.
+        # Here we use Matplotlib’s 'hot' colormap.
+        cmap = cm.get_cmap("hot")
+        r, g, b, _ = cmap(intensity)  # returns values in 0-1
+        # Convert to 0-255 and switch to BGR order for OpenCV.
+        color = (int(b * 255), int(g * 255), int(r * 255))
+
+        # Define the endpoints of the edge as integer pixel positions.
+        pt1 = (int(round(pos1[0])), int(round(pos1[1])))
+        pt2 = (int(round(pos2[0])), int(round(pos2[1])))
+
+        # Draw the edge on the image.
+        cv2.line(img, pt1, pt2, color, thickness=2)
+
+        # (Optional: You might also want to store the computed intensity as an edge attribute, e.g.:
+        # G.edges[u, v]['fire_intensity'] = intensity)
+
+    # Apply a Gaussian blur to the entire image.
+    blurred_img = cv2.GaussianBlur(img, blur_kernel_size, blur_sigma)
+
+    return blurred_img
+
 def fetch_street_network(lat, lon, dist=100):
     G = ox.graph_from_point((lat, lon), dist=dist, network_type='drive', simplify=True)
     edges = ox.graph_to_gdfs(G, nodes=False)

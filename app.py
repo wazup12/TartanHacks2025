@@ -18,7 +18,7 @@ from requests.adapters import HTTPAdapter
 from flask import Flask, request, Response, jsonify, make_response, send_from_directory
 from concurrent.futures import ThreadPoolExecutor
 from flask_cors import CORS
-from weighted_intersection_graph import create_street_and_intersection_maps, fetch_street_network, create_coordinate_transformer, create_graph_from_streets
+from weighted_intersection_graph import create_street_and_intersection_maps, fetch_street_network, create_coordinate_transformer, create_graph_from_streets, graph_to_heatmap_image
 from julius_module import generate_simulation_gif
 
 app = Flask(__name__)
@@ -51,8 +51,11 @@ def gen_gif():
         edges, nodes, bounds = fetch_street_network(lat, lon, dist=1000)
         geo_to_pixel = create_coordinate_transformer(bounds, (800, 800))
         street_graph = create_graph_from_streets(intersections, edges, geo_to_pixel, output_file=f"static/{place}_graph.json")
+        # inject function here
+        heatmap_graph = graph_to_heatmap_image(street_graph)
+
         # generate_simulation_gif(info_map, num_time_steps=50, output_file='simulation.gif'):
-        generate_simulation_gif(street_graph, output_file=f"static/{place}_sim.gif")
+        generate_simulation_gif(heatmap_graph, output_file=f"static/{place}_sim.gif")
         return jsonify({
             "latitude": lat,
             "longitude": lon,
