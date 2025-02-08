@@ -11,6 +11,7 @@ import json
 import numpy as np
 import requests
 import torch
+import os
 from urllib3 import Retry
 import cv2
 from requests.adapters import HTTPAdapter
