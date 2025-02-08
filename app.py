@@ -18,7 +18,7 @@ from requests.adapters import HTTPAdapter
 from flask import Flask, request, Response, jsonify, make_response, send_from_directory
 from concurrent.futures import ThreadPoolExecutor
 from flask_cors import CORS
-from weighted_intersection_graph import create_street_and_intersection_maps, fetch_street_network, create_coordinate_transformer, create_graph_from_streets
+from fire_weighted_graph import create_street_and_intersection_maps, fetch_street_network, create_coordinate_transformer, create_graph_from_streets
 
 app = Flask(__name__)
 CORS(app)
@@ -326,7 +326,6 @@ def get_simulation_json_for_coords(lat, lon, wind_dir=45, wind_mag=0.5):
         "time_series_positions": time_series_positions,
     }
     return json.dumps(result, indent=2)
-
 
 
 # ------------------------------------------------------------------------------
