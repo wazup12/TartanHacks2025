@@ -32,34 +32,91 @@ def get_map_image(filename):
     return response
 
 os.makedirs("static", exist_ok=True)
+
+def create_mask(image_path):
+    """Generates an RGBA mask from an overlay image and saves it with the same filename."""
+    overlay = cv2.imread(image_path, cv2.IMREAD_UNCHANGED)
+    if overlay is None:
+        print(f"Error: Could not load {image_path}")
+        return None
+
+    # Convert to grayscale if needed
+    if overlay.shape[-1] == 3:  # No alpha channel
+        gray = cv2.cvtColor(overlay, cv2.COLOR_BGR2GRAY)
+    else:  # Has alpha channel
+        gray = overlay[:, :, 3]  # Use alpha channel as the mask
+
+    # Threshold to create a binary mask
+    _, mask = cv2.threshold(gray, 1, 255, cv2.THRESH_BINARY)
+
+    # Convert to RGBA and set alpha channel
+    rgba = cv2.cvtColor(overlay, cv2.COLOR_BGR2BGRA)
+    rgba[:, :, 3] = mask  
+
+    # Save the new image with the same filename
+    cv2.imwrite(image_path, rgba)
+    return image_path
+
 @app.route("/street_images", methods=["POST"])
 def street_images():
     data = request.get_json()
     if not data or "lat" not in data or "lon" not in data:
-        return jsonify({"error": "No JSON payload provided"}), 400
+        return jsonify({"error": "Invalid JSON payload"}), 400
 
     lat, lon = float(data["lat"]), float(data["lon"])
-
     place = f"{lat},{lon}"
 
     try:
         intersections, road_path, inter_path, overlay_path = create_street_and_intersection_maps(
             lat, lon, place=place
         )
+        
         edges, nodes, bounds = fetch_street_network(lat, lon, dist=1000)
         geo_to_pixel = create_coordinate_transformer(bounds, (800, 800))
         street_graph = create_graph_from_streets(intersections, edges, geo_to_pixel, output_file=f"static/{place}_graph.json")
-    
+        
+        # Generate mask from overlay image
+        mask_path = create_mask(overlay_path)
+        
         return jsonify({
             "latitude": lat,
             "longitude": lon,
             "road_image": road_path,
             "intersection_image": inter_path,
             "overlay_image": overlay_path,
+            "mask_image": mask_path,
             "graph_json": f"static/{place}_graph.json"
         })
     except Exception as e:
         return jsonify({"error": f"Failed to generate street images: {str(e)}"}), 500
+# @app.route("/street_images", methods=["POST"])
+# def street_images():
+#     data = request.get_json()
+#     if not data or "lat" not in data or "lon" not in data:
+#         return jsonify({"error": "No JSON payload provided"}), 400
+
+#     lat, lon = float(data["lat"]), float(data["lon"])
+
+#     place = f"{lat},{lon}"
+
+#     try:
+#         intersections, road_path, inter_path, overlay_path = create_street_and_intersection_maps(
+#             lat, lon, place=place
+#         )
+#         edges, nodes, bounds = fetch_street_network(lat, lon, dist=1000)
+#         geo_to_pixel = create_coordinate_transformer(bounds, (800, 800))
+#         street_graph = create_graph_from_streets(intersections, edges, geo_to_pixel, output_file=f"static/{place}_graph.json")
+    
+#         return jsonify({
+#             "latitude": lat,
+#             "longitude": lon,
+#             "road_image": road_path,
+#             "intersection_image": inter_path,
+#             "overlay_image": overlay_path,
+#             "graph_json": f"static/{place}_graph.json"
+#         })
+#     except Exception as e:
+#         return jsonify({"error": f"Failed to generate street images: {str(e)}"}), 500
 
 
 # ------------------------------------------------------------------------------
