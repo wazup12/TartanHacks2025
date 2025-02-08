@@ -5,6 +5,7 @@
   "dependencies": {
     "cesium": "^1.126.0",
     "cra-template": "1.2.0",
+    "gifler": "^0.1.0",
     "maplibre-gl": "^5.1.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
