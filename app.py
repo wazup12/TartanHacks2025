@@ -20,6 +20,7 @@ from concurrent.futures import ThreadPoolExecutor
 from flask_cors import CORS
 from weighted_intersection_graph import create_street_and_intersection_maps, fetch_street_network, create_coordinate_transformer, create_graph_from_streets, graph_to_heatmap_image
 from julius_module import generate_simulation_gif
+from matplotlib import pyplot as plt
 
 app = Flask(__name__)
 CORS(app)
