@@ -70,20 +70,42 @@ def create_graph_from_streets(intersections, edges, geo_to_pixel, output_file="g
     
     return G
 
+# def draw_streets(edges, geo_to_pixel, image_size):
+#     road_img = np.zeros(image_size, dtype=np.uint8)  # Single-channel grayscale
+#     overlay_img = np.zeros((*image_size, 4), dtype=np.uint8)  # RGBA (4 channels)
+
+#     for _, row in edges.iterrows():
+#         coords = np.array([geo_to_pixel(lon, lat) for lon, lat in row.geometry.coords], dtype=np.int32)
+
+#         # Ensure the image is in a valid format for OpenCV
+#         if road_img.ndim == 2:  # Convert grayscale to 3-channel before drawing (optional)
+#             road_img = cv2.cvtColor(road_img, cv2.COLOR_GRAY2BGR)
+
+#         # Draw the streets (white lines) on both images
+#         cv2.polylines(road_img, [coords], isClosed=False, color=(255, 255, 255), thickness=1)
+#         cv2.polylines(overlay_img[:, :, :3], [coords], isClosed=False, color=(255, 255, 255), thickness=1)
+
+#     # Convert black to transparent in the overlay
+#     gray = cv2.cvtColor(overlay_img[:, :, :3], cv2.COLOR_BGR2GRAY)
+#     overlay_img[:, :, 3] = np.where(gray > 0, 255, 0)  # Set alpha for non-black pixels
+
+#     return road_img, overlay_img
+
+import numpy as np
+import cv2
+
 def draw_streets(edges, geo_to_pixel, image_size):
-    road_img = np.zeros(image_size, dtype=np.uint8)  # Single-channel grayscale
-    overlay_img = np.zeros((*image_size, 4), dtype=np.uint8)  # RGBA (4 channels)
+    # Ensure the images are initialized correctly
+    road_img = np.zeros((image_size[1], image_size[0], 3), dtype=np.uint8)  # Ensure (H, W, 3)
+    overlay_img = np.zeros((image_size[1], image_size[0], 4), dtype=np.uint8)  # RGBA image
 
     for _, row in edges.iterrows():
         coords = np.array([geo_to_pixel(lon, lat) for lon, lat in row.geometry.coords], dtype=np.int32)
 
-        # Ensure the image is in a valid format for OpenCV
-        if road_img.ndim == 2:  # Convert grayscale to 3-channel before drawing (optional)
-            road_img = cv2.cvtColor(road_img, cv2.COLOR_GRAY2BGR)
-
-        # Draw the streets (white lines) on both images
-        cv2.polylines(road_img, [coords], isClosed=False, color=(255, 255, 255), thickness=1)
-        cv2.polylines(overlay_img[:, :, :3], [coords], isClosed=False, color=(255, 255, 255), thickness=1)
+        if coords.ndim == 2 and len(coords) >= 2:  # Ensure coordinates are valid
+            # Draw on both images
+            cv2.polylines(road_img, [coords], isClosed=False, color=(255, 255, 255), thickness=1)
+            cv2.polylines(overlay_img[:, :, :3], [coords], isClosed=False, color=(255, 255, 255), thickness=1)
 
     # Convert black to transparent in the overlay
     gray = cv2.cvtColor(overlay_img[:, :, :3], cv2.COLOR_BGR2GRAY)
