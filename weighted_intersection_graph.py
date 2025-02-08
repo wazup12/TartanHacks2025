@@ -72,23 +72,55 @@ def create_graph_from_streets(intersections, edges, geo_to_pixel, output_file="g
 
 def draw_streets(edges, geo_to_pixel, image_size):
     road_img = np.zeros(image_size, dtype=np.uint8)
-    overlay_img = np.zeros((*image_size, 3), dtype=np.uint8)
+    overlay_img = np.zeros((*image_size, 4), dtype=np.uint8)  # RGBA format
     
     for _, row in edges.iterrows():
         coords = np.array([geo_to_pixel(lon, lat) for lon, lat in row.geometry.coords], dtype=np.int32)
         cv2.polylines(road_img, [coords], isClosed=False, color=255, thickness=1)
-        cv2.polylines(overlay_img, [coords], isClosed=False, color=(255, 255, 255), thickness=1)
+        cv2.polylines(overlay_img[:, :, :3], [coords], isClosed=False, color=(255, 255, 255), thickness=1)
+
+    # Set alpha channel
+    gray = cv2.cvtColor(overlay_img[:, :, :3], cv2.COLOR_BGR2GRAY)  # Convert to grayscale
+    overlay_img[:, :, 3] = np.where(gray > 0, 255, 0)  # Set non-black pixels to fully visible
     
     return road_img, overlay_img
+
+
+# def draw_streets(edges, geo_to_pixel, image_size):
+#     road_img = np.zeros(image_size, dtype=np.uint8)
+#     overlay_img = np.zeros((*image_size, 3), dtype=np.uint8)
+    
+#     for _, row in edges.iterrows():
+#         coords = np.array([geo_to_pixel(lon, lat) for lon, lat in row.geometry.coords], dtype=np.int32)
+#         cv2.polylines(road_img, [coords], isClosed=False, color=255, thickness=1)
+#         cv2.polylines(overlay_img, [coords], isClosed=False, color=(255, 255, 255), thickness=1)
+    
+#     return road_img, overlay_img
 
 def save_images(road_img, intersection_img, overlay_img, dir="static/", place=""):
     rpath = f"{dir}{place}_road.png"
     ipath = f"{dir}{place}_intersect.png"
     opath = f"{dir}{place}_overlay.png"
+
     cv2.imwrite(rpath, road_img)
     cv2.imwrite(ipath, intersection_img)
-    cv2.imwrite(opath, overlay_img)
+
+    # Save overlay with transparency
+    if overlay_img.shape[-1] == 4:  # Ensure RGBA format
+        cv2.imwrite(opath, overlay_img, [cv2.IMWRITE_PNG_COMPRESSION, 9])
+    else:
+        cv2.imwrite(opath, overlay_img[:, :, :3])  # Fallback for RGB
+
     return rpath, ipath, opath
+
+# def save_images(road_img, intersection_img, overlay_img, dir="static/", place=""):
+#     rpath = f"{dir}{place}_road.png"
+#     ipath = f"{dir}{place}_intersect.png"
+#     opath = f"{dir}{place}_overlay.png"
+#     cv2.imwrite(rpath, road_img)
+#     cv2.imwrite(ipath, intersection_img)
+#     cv2.imwrite(opath, overlay_img)
+#     return rpath, ipath, opath
 
 def create_street_and_intersection_maps(lat, lon, image_size=(800, 800), dist=1000, scale=1.0, intersection_radius=5, place=""):
     try:
