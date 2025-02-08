@@ -232,6 +232,7 @@ def simulate_fire(
         prob_ignite = 1 - prob_not_ignite
         random_vals = np.random.random(size=grid.shape)
         new_fires = (grid == 0) & (random_vals < prob_ignite)
+        new_fires = new_fires & (np.random.random(size=grid.shape) < 0.5)  # **NEW**: Randomly skip some new fires
         grid[new_fires] = 1
 
         states.append(grid.copy())
