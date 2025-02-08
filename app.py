@@ -18,7 +18,7 @@ from requests.adapters import HTTPAdapter
 from flask import Flask, request, Response, jsonify, make_response, send_from_directory
 from concurrent.futures import ThreadPoolExecutor
 from flask_cors import CORS
-from fire_weighted_graph import create_street_and_intersection_maps, fetch_street_network, create_coordinate_transformer, create_graph_from_streets
+from weighted_intersection_graph import create_street_and_intersection_maps, fetch_street_network, create_coordinate_transformer, create_graph_from_streets
 
 app = Flask(__name__)
 CORS(app)
