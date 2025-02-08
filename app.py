@@ -3,8 +3,8 @@
 Flask app for fire simulation.
 
 This app accepts POST requests at /fire_sim with a JSON payload containing "lat" and "lon".
-It then runs the fire simulation for the provided coordinates and returns the simulation
-results as a JSON response.
+It then runs the fire simulation for the provided coordinates and returns a reduced simulation
+result as a JSON response.
 """
 
 import json
@@ -141,7 +141,7 @@ def simulate_fire(
     gradient,
     grad_scale,
     steps=100,
-    grid_size=200,
+    grid_size=500,
     p_base=0.35,
 ):
     """
@@ -195,18 +195,18 @@ def simulate_fire(
 def get_simulation_json_for_coords(lat, lon):
     """
     Takes in a latitude and longitude, runs the simulation for those coordinates,
-    and returns a JSON string containing a reduced set of simulation points.
+    and returns a JSON string containing the new fire points at each time step for 20 steps.
 
     Modifications:
-      - Runs for fewer time steps (steps=100) on a smaller grid (grid_size=200).
-      - Samples differences every 20 steps.
-      - For each time step, only every 5th new point is included.
+      - Runs for fewer time steps (steps=20) on a smaller grid (grid_size=200).
+      - Outputs the new points at each time step (i.e. cells that switch from 0 to 1 relative to the previous step).
+      - Only every 10th new point is included.
       - Each latitude and longitude is rounded to 6 decimal places.
     """
     print("Using global MiDaS model for simulation.")
     zoom = 18
     grid_size = 200
-    steps = 100
+    steps = 20
     img = download_satellite_image_in_memory(lat, lon, zoom)
 
     print("Computing depth map...")
@@ -214,15 +214,26 @@ def get_simulation_json_for_coords(lat, lon):
         img, global_midas, global_transform, device
     )
 
+    # Resize the depth map to match the simulation grid size.
+    resized_gradient = cv2.resize(
+        depth_map, (grid_size, grid_size), interpolation=cv2.INTER_LINEAR
+    )
+
     print("Running fire spread simulation...")
     wind_dir = 45
     wind_mag = 0.5
     slope_dir = 135
-    gradient = depth_map
     grad_scale = 0.5
     p_base = 0.35
     states = simulate_fire(
-        wind_dir, wind_mag, slope_dir, gradient, grad_scale, steps, grid_size, p_base
+        wind_dir,
+        wind_mag,
+        slope_dir,
+        resized_gradient,
+        grad_scale,
+        steps,
+        grid_size,
+        p_base,
     )
     print(f"Simulation completed with {len(states)} time steps.")
 
@@ -234,9 +245,9 @@ def get_simulation_json_for_coords(lat, lon):
     center = grid_size // 2
 
     time_series_positions = []
-    # Sample differences every 20 time steps.
-    for t in range(20, len(states), 20):
-        prev_state = states[t - 20]
+    # For each time step (1 to steps), compute the new fire points relative to the previous state.
+    for t in range(1, len(states)):
+        prev_state = states[t - 1]
         curr_state = states[t]
         new_fire_mask = (curr_state == 1) & (prev_state == 0)
         new_indices = np.nonzero(new_fire_mask)
@@ -246,11 +257,8 @@ def get_simulation_json_for_coords(lat, lon):
         for i, j in zip(new_indices[0], new_indices[1]):
             cell_lat = lat + (center - i) * meter_to_deg_lat
             cell_lon = lon + (j - center) * meter_to_deg_lon
-            # Round lat and lon to 6 decimal places.
             new_positions.append([round(cell_lat, 6), round(cell_lon, 6)])
-        # Space out points: if there are many, sample only every 5th.
-        if new_positions:
-            new_positions = new_positions[::5]
+        new_positions = new_positions[::2]
         time_series_positions.append(new_positions)
 
     result = {
