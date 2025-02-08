@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Place to Coordinates Demo</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        text-align: center;
+        margin: 50px;
+      }
+      input,
+      button {
+        padding: 10px;
+        margin: 10px;
+        font-size: 16px;
+      }
+      #response {
+        margin-top: 20px;
+        padding: 10px;
+        border: 1px solid #ccc;
+        display: inline-block;
+        min-width: 300px;
+        background: #f9f9f9;
+      }
+      #map-container {
+        margin-top: 20px;
+        display: none;
+      }
+      img {
+        width: 600px;
+        height: 400px;
+        border: 1px solid #ccc;
+      }
+    </style>
+  </head>
+  <body>
+    <h2>Enter a Place Name</h2>
+    <label for="place_name">Place:</label>
+    <input type="text" id="place_name" placeholder="Enter place name" />
+
+    <br />
+    <button onclick="getCoordinates()">Search</button>
+
+    <h3>Response:</h3>
+    <div id="response">Waiting for response...</div>
+
+    <div id="map-container">
+      <h3>Static Map:</h3>
+      <img id="osm-map" src="" alt="OSM Map" />
+    </div>
+
+    <script>
+      function getCoordinates() {
+        const placeName = document.getElementById("place_name").value;
+        const responseDiv = document.getElementById("response");
+        const mapContainer = document.getElementById("map-container");
+        const mapImg = document.getElementById("osm-map");
+
+        if (!placeName) {
+          responseDiv.innerHTML = "Please enter a valid place name!";
+          return;
+        }
+
+        fetch("/get-coordinates", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ place_name: placeName }),
+        })
+          .then((response) => response.json())
+          .then((data) => {
+            if (data.error) {
+              responseDiv.innerHTML = `<b>Error:</b> ${data.error}`;
+              mapContainer.style.display = "none";
+            } else {
+              responseDiv.innerHTML = `<pre>${JSON.stringify(
+                data,
+                null,
+                2
+              )}</pre>`;
+              if (data.map_image) {
+                mapContainer.style.display = "block";
+                mapImg.src = data.map_image;
+              }
+            }
+          })
+          .catch((error) => {
+            responseDiv.innerHTML = `Error: ${error}`;
+          });
+      }
+    </script>
+  </body>
+</html>
