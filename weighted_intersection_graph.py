@@ -185,11 +185,19 @@ ROAD_IMPORTANCE = {
     "tertiary": 1, "residential": 0.5, "unclassified": 0.5, "service": 0.3
 }
 
+# def fetch_street_network(lat, lon, dist=100):
+#     G = ox.graph_from_point((lat, lon), dist=dist, network_type='drive', simplify=True)
+#     edges = ox.graph_to_gdfs(G, nodes=False)
+#     nodes = ox.graph_to_gdfs(G, edges=False)
+#     return edges, nodes, edges.total_bounds
+
 def fetch_street_network(lat, lon, dist=100):
     G = ox.graph_from_point((lat, lon), dist=dist, network_type='drive', simplify=True)
     edges = ox.graph_to_gdfs(G, nodes=False)
     nodes = ox.graph_to_gdfs(G, edges=False)
+    print("Total Bounds:", edges.total_bounds)  # Debugging line
     return edges, nodes, edges.total_bounds
+
 
 def create_coordinate_transformer(bounds, image_size, scale=1.0):
     min_x, min_y, max_x, max_y = bounds
