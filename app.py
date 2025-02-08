@@ -302,7 +302,7 @@ def get_simulation_json_for_coords(lat, lon, wind_dir=45, wind_mag=0.5):
     center = grid_size // 2
 
     # Define a spacing factor to expand the coordinate spacing.
-    spacing_factor = 2  # Increase this value to further spread out the coordinates
+    spacing_factor = 20  # Increase this value to further spread out the coordinates
 
     time_series_positions = []
     # For each time step (1 to steps), compute the new fire points relative to the previous state.
