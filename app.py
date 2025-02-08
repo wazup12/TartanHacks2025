@@ -301,6 +301,9 @@ def get_simulation_json_for_coords(lat, lon, wind_dir=45, wind_mag=0.5):
     )
     center = grid_size // 2
 
+    # Define a spacing factor to expand the coordinate spacing.
+    spacing_factor = 2  # Increase this value to further spread out the coordinates
+
     time_series_positions = []
     # For each time step (1 to steps), compute the new fire points relative to the previous state.
     for t in range(1, len(states)):
@@ -309,8 +312,9 @@ def get_simulation_json_for_coords(lat, lon, wind_dir=45, wind_mag=0.5):
         new_fire_mask = (curr_state == 1) & (prev_state == 0)
         new_indices = np.nonzero(new_fire_mask)
         new_positions = []
-        meter_to_deg_lat = resolution / 111320.0
-        meter_to_deg_lon = resolution / (111320.0 * np.cos(np.deg2rad(lat)))
+        # Adjust conversion factors with the spacing factor.
+        meter_to_deg_lat = (resolution / 111320.0) * spacing_factor
+        meter_to_deg_lon = (resolution / (111320.0 * np.cos(np.deg2rad(lat)))) * spacing_factor
         for i, j in zip(new_indices[0], new_indices[1]):
             cell_lat = lat + (center - i) * meter_to_deg_lat
             cell_lon = lon + (j - center) * meter_to_deg_lon
@@ -322,6 +326,7 @@ def get_simulation_json_for_coords(lat, lon, wind_dir=45, wind_mag=0.5):
         "time_series_positions": time_series_positions,
     }
     return json.dumps(result, indent=2)
+
 
 
 # ------------------------------------------------------------------------------
