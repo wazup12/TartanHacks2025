@@ -1,2 +1,4 @@
 cache/*
-.Ds_Store
+.DS_Store
+prompt.txt
+*.jpg

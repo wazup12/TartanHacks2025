@@ -200,12 +200,12 @@ def plot_color_graph(G):
     plt.show()
 
 if __name__ == "__main__":
-    lat, lon = 34.0204789, -118.4117326
+    lat, lon = 52.2216033, 21.057503
     start = time.time()
-    intersections = create_street_and_intersection_maps(lat, lon, intersection_radius=3, dist=5000)
+    intersections = create_street_and_intersection_maps(lat, lon, intersection_radius=3, dist=7000)
     
     if intersections:
-        edges, nodes, bounds = fetch_street_network(lat, lon, dist=5000)
+        edges, nodes, bounds = fetch_street_network(lat, lon, dist=2000)
         geo_to_pixel = create_coordinate_transformer(bounds, (800, 800), scale=1.0)
         street_graph = create_graph_from_streets(intersections, edges, geo_to_pixel, output_file="street_graph.json")
         print(f"Graph created with {len(street_graph.nodes)} nodes and {len(street_graph.edges)} edges.")
