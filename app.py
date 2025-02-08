@@ -15,13 +15,21 @@ import os
 from urllib3 import Retry
 import cv2
 from requests.adapters import HTTPAdapter
-from flask import Flask, request, Response, jsonify
+from flask import Flask, request, Response, jsonify, make_response, send_from_directory
 from concurrent.futures import ThreadPoolExecutor
 from flask_cors import CORS
 from weighted_intersection_graph import create_street_and_intersection_maps, fetch_street_network, create_coordinate_transformer, create_graph_from_streets
 
 app = Flask(__name__)
 CORS(app)
+
+@app.route('/static/<filename>')
+def get_map_image(filename):
+    response = make_response(send_from_directory("static", filename))
+    # response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    # response.headers["Pragma"] = "no-cache"
+    # response.headers["Expires"] = "0"
+    return response
 
 os.makedirs("static", exist_ok=True)
 @app.route("/street_images", methods=["POST"])
