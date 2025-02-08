@@ -136,9 +136,9 @@ def mark_intersections(nodes, geo_to_pixel, image_size, intersection_radius=5):
     return intersection_img, intersections
 
 def save_images(road_img, intersection_img, overlay_img):
-    cv2.imwrite("road_map.png", road_img)
-    cv2.imwrite("intersection_map.png", intersection_img)
-    cv2.imwrite("overlay.png", overlay_img)
+    cv2.imwrite(f"static/road_map.png", road_img)
+    cv2.imwrite(f"static/intersection_map.png", intersection_img)
+    cv2.imwrite(f"static/overlay.png", overlay_img)
     # print("Saved road_map.png, intersection_map.png, and overlay.png successfully.")
 
 def plot_graph(G):
@@ -156,6 +156,33 @@ def plot_graph(G):
 import matplotlib.colors as mcolors
 
 def plot_color_graph(G):
+    """
+    Plots the graph with edges color-coded based on importance,
+    ensuring tight packing and compact output like other images.
+    """
+    plt.figure(figsize=(8, 8))  # Match other image sizes
+    pos = nx.get_node_attributes(G, 'pos')
+
+    color_map = {
+        5: "red",
+        4: "darkorange",
+        3: "orange",
+        2: "yellow",
+        1: "green",
+        0.5: "blue",
+        0.3: "cyan"
+    }
+
+    edge_colors = [color_map.get(G.edges[e]["importance"], "gray") for e in G.edges]
+
+    nx.draw(G, pos, with_labels=False, node_size=20, node_color="black", edge_color=edge_colors, width=1)
+
+    plt.axis("off")  # Remove unnecessary axes
+    plt.subplots_adjust(left=0, right=1, top=1, bottom=0)  # Ensure tight packing
+    plt.savefig("street_graph.png", bbox_inches="tight", pad_inches=0, dpi=300)
+
+
+def plot_color_graph_old(G):
     """
     Plots the graph with edges color-coded based on importance.
     """
@@ -197,8 +224,9 @@ def plot_color_graph(G):
     plt.legend(handles=legend_patches, loc="upper right")
 
     plt.title("Street Graph with Importance-Based Road Colors")
-    # save plt image
-    plt.savefig("static/street_graph.png")
+    # save plt image without annotations, keys, and borders
+    plt.axis('off')
+    plt.savefig("street_graph.png", bbox_inches='tight', pad_inches=0)
     # plt.show()
 
 def get_coordinates_from_place(place_name):
@@ -281,7 +309,7 @@ if __name__ == "__main__":
 
     # Generate multiple images dynamically
     plot_color_graph(street_graph)
-    image_filenames.append("street_graph.png")  # Save the main graph image
+    # image_filenames.append("street_graph.png")  # Save the main graph image
 
     # Add additional images (e.g., intersections, roads)
     for img in ["road_map.png", "intersection_map.png", "overlay.png"]:
