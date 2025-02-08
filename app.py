@@ -18,7 +18,8 @@ from requests.adapters import HTTPAdapter
 from flask import Flask, request, Response, jsonify, make_response, send_from_directory
 from concurrent.futures import ThreadPoolExecutor
 from flask_cors import CORS
-from fire_weighted_graph import create_street_and_intersection_maps, fetch_street_network, create_coordinate_transformer, create_graph_from_streets
+from weighted_intersection_graph import create_street_and_intersection_maps, fetch_street_network, create_coordinate_transformer, create_graph_from_streets
+from julius_module import generate_simulation_gif
 
 app = Flask(__name__)
 CORS(app)
@@ -30,6 +31,35 @@ def get_map_image(filename):
     # response.headers["Pragma"] = "no-cache"
     # response.headers["Expires"] = "0"
     return response
+
+# grabs heatmap from latlong
+# then passes to julius_module to generate gif
+# then saves in static folder
+@app.route("/gen_gif", methods=["POST"])
+def gen_gif():
+    data = request.get_json()
+    if not data or "lat" not in data or "lon" not in data:
+        return jsonify({"error": "No JSON payload provided"}), 400
+
+    lat, lon = float(data["lat"]), float(data["lon"])
+    place = f"{lat},{lon}"
+
+    try:
+        intersections, road_path, inter_path, overlay_path = create_street_and_intersection_maps(
+            lat, lon, place=place
+        )
+        edges, nodes, bounds = fetch_street_network(lat, lon, dist=1000)
+        geo_to_pixel = create_coordinate_transformer(bounds, (800, 800))
+        street_graph = create_graph_from_streets(intersections, edges, geo_to_pixel, output_file=f"static/{place}_graph.json")
+        # generate_simulation_gif(info_map, num_time_steps=50, output_file='simulation.gif'):
+        generate_simulation_gif(street_graph, output_file=f"static/{place}_sim.gif")
+        return jsonify({
+            "latitude": lat,
+            "longitude": lon,
+            "gif_path": f"static/{place}_sim.gif"
+        })
+    except Exception as e:
+        return jsonify({"error": f"Failed to generate gif: {str(e)}"}), 500
 
 os.makedirs("static", exist_ok=True)
 @app.route("/street_images", methods=["POST"])

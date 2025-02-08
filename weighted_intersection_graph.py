@@ -123,6 +123,7 @@ def draw_streets(edges, geo_to_pixel, image_size):
         cv2.polylines(road_img, [coords], isClosed=False, color=gray_intensity, thickness=line_thickness)
         # Draw on the color overlay image
         cv2.polylines(overlay_img, [coords], isClosed=False, color=line_color, thickness=line_thickness)
+
     
     return road_img, overlay_img
 
