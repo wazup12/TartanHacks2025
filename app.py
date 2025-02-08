@@ -141,7 +141,7 @@ def simulate_fire(
     gradient,
     grad_scale,
     steps=100,
-    grid_size=500,
+    grid_size=200,
     p_base=0.35,
 ):
     """
@@ -189,14 +189,24 @@ def simulate_fire(
     return states
 
 
+# ------------------------------------------------------------------------------
+# Generate Simulation JSON (with reduced output size)
+# ------------------------------------------------------------------------------
 def get_simulation_json_for_coords(lat, lon):
     """
     Takes in a latitude and longitude, runs the simulation for those coordinates,
-    and returns the result as a JSON string.
+    and returns a JSON string containing a reduced set of simulation points.
+
+    Modifications:
+      - Runs for fewer time steps (steps=100) on a smaller grid (grid_size=200).
+      - Samples differences every 20 steps.
+      - For each time step, only every 5th new point is included.
+      - Each latitude and longitude is rounded to 6 decimal places.
     """
-    # Use the globally loaded model and transform.
     print("Using global MiDaS model for simulation.")
     zoom = 18
+    grid_size = 200
+    steps = 100
     img = download_satellite_image_in_memory(lat, lon, zoom)
 
     print("Computing depth map...")
@@ -210,8 +220,6 @@ def get_simulation_json_for_coords(lat, lon):
     slope_dir = 135
     gradient = depth_map
     grad_scale = 0.5
-    steps = 500
-    grid_size = 500
     p_base = 0.35
     states = simulate_fire(
         wind_dir, wind_mag, slope_dir, gradient, grad_scale, steps, grid_size, p_base
@@ -226,8 +234,9 @@ def get_simulation_json_for_coords(lat, lon):
     center = grid_size // 2
 
     time_series_positions = []
-    for t in range(10, len(states), 10):
-        prev_state = states[t - 10]
+    # Sample differences every 20 time steps.
+    for t in range(20, len(states), 20):
+        prev_state = states[t - 20]
         curr_state = states[t]
         new_fire_mask = (curr_state == 1) & (prev_state == 0)
         new_indices = np.nonzero(new_fire_mask)
@@ -237,7 +246,11 @@ def get_simulation_json_for_coords(lat, lon):
         for i, j in zip(new_indices[0], new_indices[1]):
             cell_lat = lat + (center - i) * meter_to_deg_lat
             cell_lon = lon + (j - center) * meter_to_deg_lon
-            new_positions.append([float(cell_lat), float(cell_lon)])
+            # Round lat and lon to 6 decimal places.
+            new_positions.append([round(cell_lat, 6), round(cell_lon, 6)])
+        # Space out points: if there are many, sample only every 5th.
+        if new_positions:
+            new_positions = new_positions[::5]
         time_series_positions.append(new_positions)
 
     result = {
