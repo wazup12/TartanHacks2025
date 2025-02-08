@@ -1,0 +1,9 @@
+./training/*
+./labels/*
+./depr/*
+./burning_sat/*
+.DS_Store
+.new_venv/*
+*.h5
+training/*
+labels/*

@@ -23,7 +23,7 @@ def download_satellite_image(lat, lon, zoom, output_file):
         "zoom": str(zoom),
         "size": "500x500",
         "maptype": "satellite",
-        "key": "AIzaSyAAQfRZTVRl8VpxpRfKtbL_phKc1PLwYQs"
+        "key": "AIzaSyBk9BvEcF71-uEpdsrqML_0lqrddsGqoV0"
         # Optionally, you can add "scale": "2" for a higher resolution image.
     }
     

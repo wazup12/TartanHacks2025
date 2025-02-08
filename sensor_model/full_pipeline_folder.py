@@ -6,8 +6,10 @@ Full Pipeline:
   3. Runs a fire spread simulation (cellular automata) that uses the gradient as slope.
   4. Samples 5 fire masks from the simulation and overlays smoke onto the satellite image.
   
-Each satellite image (num_sat_points) produces 5 data points: a burned image and its corresponding fire mask.
-Only these final outputs are written to disk in the specified output directory.
+Each satellite image (num_sat_points) produces 5 data points:
+   - The burned satellite image (training data)
+   - The corresponding fire mask (label)
+These outputs are saved in separate directories.
 """
 
 import os
@@ -21,6 +23,7 @@ from PIL import Image
 from scipy.ndimage import gaussian_filter
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
+import random
 
 # -------------------------------
 # Step 1: Download Satellite Image (with retries)
@@ -40,7 +43,6 @@ def download_satellite_image_in_memory(lat, lon, zoom):
     }
     print(f"Requesting satellite image for lat: {lat:.6f}, lon: {lon:.6f}...")
 
-    # Create a session with a retry strategy.
     session = requests.Session()
     retries = Retry(
         total=5,
@@ -90,31 +92,37 @@ def compute_depth_map_from_image(img, midas, transform, device):
 # -------------------------------
 def shift_with_zero_padding(arr, shift_row, shift_col):
     """
-    Shifts a 2D array by (shift_row, shift_col) without wrapping (new areas filled with 0).
+    Shifts a 2D array by (shift_row, shift_col) without wrapping.
+    New areas are filled with zeros.
     """
     result = np.zeros_like(arr)
+    # Determine the row slices.
     if shift_row >= 0:
-        row_start_src = 0
-        row_end_src = arr.shape[0] - shift_row
-        row_start_dest = shift_row
-        row_end_dest = arr.shape[0]
+        src_row_start = 0
+        src_row_end = arr.shape[0] - shift_row
+        dst_row_start = shift_row
+        dst_row_end = arr.shape[0]
     else:
-        row_start_src = -shift_row
-        row_end_src = arr.shape[0]
-        row_start_dest = 0
-        row_end_dest = arr.shape[0] + shift_row
+        src_row_start = -shift_row
+        src_row_end = arr.shape[0]
+        dst_row_start = 0
+        dst_row_end = arr.shape[0] + shift_row
+
+    # Determine the column slices.
     if shift_col >= 0:
-        col_start_src = 0
-        col_end_src = arr.shape[1] - shift_col
-        col_start_dest = shift_col
-        col_end_dest = arr.shape[1]
+        src_col_start = 0
+        src_col_end = arr.shape[1] - shift_col
+        dst_col_start = shift_col
+        dst_col_end = arr.shape[1]
     else:
-        col_start_src = -shift_col
-        col_end_src = arr.shape[1]
-        col_start_dest = 0
-        col_end_dest = arr.shape[1] + shift_col
-    result[row_start_dest:row_end_dest, col_start_dest:col_end_dest] = \
-        arr[row_start_src:row_end_src, col_start_src:col_end_src]
+        src_col_start = -shift_col
+        src_col_end = arr.shape[1]
+        dst_col_start = 0
+        dst_col_end = arr.shape[1] + shift_col
+
+    # Copy the valid part of the array into the result.
+    result[dst_row_start:dst_row_end, dst_col_start:dst_col_end] = \
+        arr[src_row_start:src_row_end, src_col_start:src_col_end]
     return result
 
 def simulate_fire(wind_dir, wind_mag, slope_dir, gradient, grad_scale, steps=100, grid_size=500, p_base=0.35):
@@ -263,28 +271,35 @@ def main():
     #                     help="Smoke color as comma-separated R,G,B (default: 100,80,80).")
     # parser.add_argument("--output_prefix", type=str, default="output",
     #                     help="Prefix for the output file names (default: 'output').")
-    # parser.add_argument("--output_dir", type=str, default="output",
-    #                     help="Directory where output files will be saved (default: 'output').")
+    # parser.add_argument("--data_dir", type=str, default="training_data",
+    #                     help="Directory where burned (training) images will be saved (default: 'training_data').")
+    # parser.add_argument("--labels_dir", type=str, default="labels",
+    #                     help="Directory where label files (fire masks) will be saved (default: 'labels').")
     # args = parser.parse_args()
 
+    
 
-    num_sat_points = 3
+
+
+    num_sat_points = 25
     center_lat = 40.4447605
     center_lon = -79.9426024
     zoom = 17 
-    wind_dir = 90.0
-    wind_mag = 0.4
+    # wind_dir = 270.0
+    # wind_mag = 0.4
     slope_dir = 0.0 
     grad_scale = 0.0025 
-    steps = 500 
+    steps = 250
     sigma = 35.0 
     opacity = 0.97 
-    smoke_color = "100,80,80"
-    output_prefix = "output"
-    output_dir = "burning_sat"
+    smoke_color = "150,150,150"
+    output_prefix = "output1"
+    data_dir = "training"
+    labels_dir = "labels"
 
-    # Create the output directory if it doesn't exist.
-    os.makedirs(output_dir, exist_ok=True)
+    # Create the output directories if they don't exist.
+    os.makedirs(data_dir, exist_ok=True)
+    os.makedirs(labels_dir, exist_ok=True)
 
     # Load the MiDaS model and transforms (only once)
     model_type = "DPT_Hybrid"
@@ -306,6 +321,8 @@ def main():
         lon = center_lon + lon_offset
         print(f"\nProcessing satellite point {i+1}/{num_sat_points} at lat: {lat:.6f}, lon: {lon:.6f}")
         
+        wind_mag = random.uniform(0.0, 1.0)
+        wind_dir = random.uniform(0.0, 360.0)
         burned_images, fire_masks = full_pipeline(
             lat, lon, zoom,
             wind_dir, wind_mag,
@@ -315,9 +332,10 @@ def main():
             midas, transform, device
         )
         
+        # Save burned images (training data) and fire masks (labels) in separate directories.
         for j, (burned_img, mask) in enumerate(zip(burned_images, fire_masks)):
-            burned_filename = os.path.join(output_dir, f"{output_prefix}_sat_{i}_burned_{j}.jpg")
-            mask_filename   = os.path.join(output_dir, f"{output_prefix}_sat_{i}_fire_mask_{j}.npy")
+            burned_filename = os.path.join(data_dir, f"{output_prefix}_sat_{i}_burned_{j}.jpg")
+            mask_filename   = os.path.join(labels_dir, f"{output_prefix}_sat_{i}_fire_mask_{j}.npy")
             burned_img.save(burned_filename)
             np.save(mask_filename, mask)
             print(f"Saved burned image: {burned_filename}")
