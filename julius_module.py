@@ -209,7 +209,7 @@ def get_neighbors(tsp_order):
         neighbors[node_index] = [prev_node, next_node]
     return neighbors
 
-def local_random_walk(agent, step_size=5.0):
+def local_random_walk(agent, step_size=20.0):
     """
     Perform a discrete random walk for an agent.
     The probability of a given move is proportional to the Gaussian sensing footprint.
@@ -316,7 +316,7 @@ def simulate_and_save_gif(info_map, nodes, agents, desired_allocation, tsp_order
                     agent.pos = check_bounds(agent.pos, width, height)
             for agent in agents:
                 if not agent.transitioning:
-                    delta = local_random_walk(agent, step_size=3)
+                    delta = local_random_walk(agent, step_size=20)
                     new_offset = agent.local_offset + delta
                     base = nodes[agent.node_index]['mean']
                     new_pos = base + new_offset
@@ -361,7 +361,7 @@ def simulate_and_save_gif(info_map, nodes, agents, desired_allocation, tsp_order
             # --- For non-transitioning agents, update via local random walk within their component ---
             for agent in agents:
                 if not agent.transitioning:
-                    delta = local_random_walk(agent, step_size=3)
+                    delta = local_random_walk(agent, step_size=20)
                     new_offset = agent.local_offset + delta
                     base = nodes[agent.node_index]['mean']
                     new_pos = base + new_offset
