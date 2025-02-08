@@ -411,6 +411,7 @@ def generate_simulation_gif(info_map, num_time_steps=50, output_file='simulation
     Returns the output file name.
     """
     # Compute DP-GMM nodes from the info_map.
+    info_map = plt.imread(info_map)
     dgmm = DirichletGMM(max_components=10, weight_threshold=1e-3, plot_gaussians=False)
     nodes = dgmm.fit(info_map)
 
