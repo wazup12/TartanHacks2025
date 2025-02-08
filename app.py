@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify, render_template, send_from_directory
+from flask import Flask, request, jsonify, render_template, send_from_directory, make_response
 import subprocess
 import json
 import os
@@ -45,8 +45,12 @@ def get_coordinates():
 
 @app.route('/static/<filename>')
 def get_map_image(filename):
-    return send_from_directory("static", filename)
+    response = make_response(send_from_directory("static", filename))
+    response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+    return response
 
 if __name__ == '__main__':
     os.makedirs("static", exist_ok=True)
-    app.run(debug=True)
+    app.run(host="0.0.0.0", port=5000)
