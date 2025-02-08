@@ -32,6 +32,10 @@
         width: 600px;
         height: 400px;
         border: 1px solid #ccc;
+        margin-bottom: 10px;
+      }
+      #controls {
+        margin-top: 10px;
       }
     </style>
   </head>
@@ -43,19 +47,32 @@
     <br />
     <button onclick="getCoordinates()">Search</button>
 
-    <h3>Response:</h3>
+    <h3 id="map-header">Static Map</h3>
+    <!-- Dynamically updated -->
+
     <div id="response">Waiting for response...</div>
 
     <div id="map-container">
-      <h3>Static Map:</h3>
+      <h3 id="map-title">Map of:</h3>
+      <!-- Dynamic title -->
       <img id="osm-map" src="" alt="OSM Map" />
+      <div id="controls">
+        <button onclick="prevImage()">⬅ Previous</button>
+        <button onclick="nextImage()">Next ➡</button>
+      </div>
     </div>
 
     <script>
+      let imageUrls = [];
+      let currentImageIndex = 0;
+      let autoCycleInterval;
+
       function getCoordinates() {
         const placeName = document.getElementById("place_name").value;
         const responseDiv = document.getElementById("response");
         const mapContainer = document.getElementById("map-container");
+        const mapHeader = document.getElementById("map-header");
+        const mapTitle = document.getElementById("map-title");
         const mapImg = document.getElementById("osm-map");
 
         if (!placeName) {
@@ -81,15 +98,43 @@
                 null,
                 2
               )}</pre>`;
-              if (data.map_image) {
+
+              // Update the header with the actual place name
+              mapHeader.textContent = `Map of ${data.place_name}`;
+              mapTitle.textContent = `Map of: ${data.place_name}`;
+
+              // Store image URLs and reset index
+              imageUrls = data.map_images || [];
+              currentImageIndex = 0;
+
+              if (imageUrls.length > 0) {
                 mapContainer.style.display = "block";
-                mapImg.src = data.map_image;
+                mapImg.src = imageUrls[currentImageIndex];
+
+                // Start auto-cycling images every 3 seconds
+                clearInterval(autoCycleInterval);
+                autoCycleInterval = setInterval(nextImage, 1000);
               }
             }
           })
           .catch((error) => {
             responseDiv.innerHTML = `Error: ${error}`;
           });
+      }
+
+      function nextImage() {
+        if (imageUrls.length > 0) {
+          currentImageIndex = (currentImageIndex + 1) % imageUrls.length;
+          document.getElementById("osm-map").src = imageUrls[currentImageIndex];
+        }
+      }
+
+      function prevImage() {
+        if (imageUrls.length > 0) {
+          currentImageIndex =
+            (currentImageIndex - 1 + imageUrls.length) % imageUrls.length;
+          document.getElementById("osm-map").src = imageUrls[currentImageIndex];
+        }
       }
     </script>
   </body>
