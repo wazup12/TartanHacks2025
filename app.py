@@ -246,7 +246,7 @@ def simulate_fire(
 # ------------------------------------------------------------------------------
 # Generate Simulation JSON (with reduced output size)
 # ------------------------------------------------------------------------------
-def get_simulation_json_for_coords(lat, lon):
+def get_simulation_json_for_coords(lat, lon, wind_dir=45, wind_mag=0.5):
     """
     Takes in a latitude and longitude, runs the simulation for those coordinates,
     and returns a JSON string containing the new fire points at each time step for 20 steps.
@@ -274,8 +274,6 @@ def get_simulation_json_for_coords(lat, lon):
     )
 
     print("Running fire spread simulation...")
-    wind_dir = 45
-    wind_mag = 0.5
     slope_dir = 135
     grad_scale = 0.5
     p_base = 0.35
@@ -338,11 +336,13 @@ def fire_sim():
     try:
         lat = float(data.get("lat"))
         lon = float(data.get("lon"))
+        mag = float(data.get("mag"))
+        ang = float(data.get("ang"))
     except (TypeError, ValueError):
         return jsonify({"error": "Invalid or missing latitude/longitude values"}), 400
 
     try:
-        simulation_json = get_simulation_json_for_coords(lat, lon)
+        simulation_json = get_simulation_json_for_coords(lat, lon, wind_dir=ang, wind_mag=mag)
     except Exception as e:
         return jsonify({"error": f"Simulation failed: {str(e)}"}), 500
 
