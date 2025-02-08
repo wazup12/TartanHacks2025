@@ -1,0 +1,21 @@
+Mega prompt     
+
+Hey, I am working on a project and I need your help. 
+
+I am trying to build a project that allows me to model and visualize a fire as it’s spreading through a city or a certain area. 
+
+What I have already: 
+I have a bunch of python scripts: 
+- one script takes a pair of coordinates as input, and then, in around 60 seconds produces all roads, all intersections and a graph of all roads and all intersections within a given area. 
+    the output of this is a massive graph of a few thousand vertices (corresponding to the intersections) and a few thousand edges (corresponding to the roads) which are all weighted depending on how fire prone they 
+    are
+
+The first step of what I want to do is to have a web ui which displays a map at a certain coordinate and scale that I can input, preferably, this map would be open street map as this is the map that I used for all
+of my road pre-processing. I want the ui to be one large map, I want the user to be able put in some coordinates, and then I want the map to move to those coordinates on the front end, and then I want to run the
+python script on the backend, centered on those coordinates. While the python script is running I want some sort of loading bar on the ui to just tell the user that they have to wait, actually it doesn't even have to
+be a loading bar, it just needs to be some indication that the script is running. Then, once the python script is done running I want to overlay the graph that it found onto the map so that I can do further visualization.
+
+I am doing this for a hackathon project so I need whatever solution you give me to this to be quite simple and fast to implement. I am not super experienced so I would appreciate your help in setting up this web ui 
+and making sure that everything works correctly. Please try to use as few dependencies as possible and make it simple. 
+
+Alright, with all that in mind. Please give me tech stack suggestions and give me instructions on how to get started. Thanks :) 

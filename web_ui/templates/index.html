@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>3D Terrain Slice Simulation with Points</title>
+  <meta name="viewport" content="initial-scale=1,maximum-scale=1,user-scalable=no" />
+  <!-- Mapbox GL JS CSS and JS -->
+  <link href="https://api.mapbox.com/mapbox-gl-js/v2.10.0/mapbox-gl.css" rel="stylesheet" />
+  <script src="https://api.mapbox.com/mapbox-gl-js/v2.10.0/mapbox-gl.js"></script>
+  <!-- three.js -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <!-- SimplexNoise for terrain simulation -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/simplex-noise/2.4.0/simplex-noise.min.js"></script>
+  <style>
+    body { margin: 0; padding: 0; }
+    #map { position: absolute; top: 0; bottom: 0; width: 100%; }
+    #ui {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      background: rgba(255, 255, 255, 0.9);
+      padding: 10px;
+      border-radius: 5px;
+      font-family: sans-serif;
+      z-index: 1;
+    }
+    #ui input { margin: 0 5px; }
+  </style>
+</head>
+<body>
+  <!-- UI for coordinate input -->
+  <div id="ui">
+    <label for="lat">Latitude:</label>
+    <input type="text" id="lat" placeholder="40.7128" />
+    <label for="lng">Longitude:</label>
+    <input type="text" id="lng" placeholder="-74.0060" />
+    <button id="generate">Generate 3D Slice &amp; Plot Points</button>
+  </div>
+  <div id="map"></div>
+  
+  <script>
+    // Replace with your Mapbox access token
+    mapboxgl.accessToken = 'pk.eyJ1IjoibWF4aW11c2tpaWkiLCJhIjoiY202dnRhYTZiMGJ3NzJqcTg3ZDZ2dzByMSJ9.lGZ5EeYpevTAZhL7EtH4-w';
+    
+    // Initialize the Mapbox map.
+    var map = new mapboxgl.Map({
+      container: 'map',
+      style: 'mapbox://styles/mapbox/light-v10',
+      center: [-74.0060, 40.7128], // Default center
+      zoom: 12,
+      pitch: 60,
+      bearing: -17.6,
+      antialias: true
+    });
+    
+    // Define a custom three.js layer.
+    var customLayer = {
+      id: '3d-terrain-slice',
+      type: 'custom',
+      renderingMode: '3d',
+      center: { lat: 40.7128, lng: -74.0060 }, // Will be updated on generation.
+      onAdd: function(map, gl) {
+        this.scene = new THREE.Scene();
+        this.camera = new THREE.Camera();
+        this.renderer = new THREE.WebGLRenderer({
+          canvas: map.getCanvas(),
+          context: gl,
+          antialias: true
+        });
+        this.renderer.autoClear = false;
+        
+        // Create a 10 km x 10 km terrain slice.
+        var size = 10000; // in meters
+        var segments = 128;
+        var geometry = new THREE.PlaneGeometry(size, size, segments, segments);
+        geometry.rotateX(-Math.PI / 2);  // Make it horizontal (Y up)
+        
+        // Use a noise function seeded with a value (based on the center coordinate).
+        var seed = this.center.lat.toString() + this.center.lng.toString();
+        var simplex = new SimplexNoise(seed);
+        var positions = geometry.attributes.position;
+        var vertex = new THREE.Vector3();
+        for (var i = 0; i < positions.count; i++) {
+          vertex.fromBufferAttribute(positions, i);
+          // Normalize x and z to [0, 1] over the plane.
+          var u = (vertex.x / size) + 0.5;
+          var v = (vertex.z / size) + 0.5;
+          // Compute elevation using the noise function.
+          var elevation = simplex.noise2D(u * 10, v * 10) * 300;
+          vertex.y = elevation;
+          positions.setXYZ(i, vertex.x, vertex.y, vertex.z);
+        }
+        geometry.computeVertexNormals();
+        
+        var material = new THREE.MeshLambertMaterial({
+          color: 0x88cc88,
+          side: THREE.DoubleSide
+        });
+        this.terrainMesh = new THREE.Mesh(geometry, material);
+        this.scene.add(this.terrainMesh);
+        
+        // Add basic lighting.
+        var ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+        this.scene.add(ambientLight);
+        var directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+        directionalLight.position.set(0, 1000, 1000);
+        this.scene.add(directionalLight);
+      },
+      render: function(gl, matrix) {
+        var m = new THREE.Matrix4().fromArray(matrix);
+        this.camera.projectionMatrix = m;
+        this.renderer.state.reset();
+        this.renderer.render(this.scene, this.camera);
+        map.triggerRepaint();
+      }
+    };
+    
+    // Function to plot points (from the Python simulation) into the three.js scene.
+    function plotPoints(center, points) {
+      // Approximate conversion factors (in meters) per degree.
+      const metersPerDegLat = 111320;
+      const metersPerDegLon = 111320 * Math.cos(center.lat * Math.PI / 180);
+      
+      points.forEach(point => {
+        // Calculate east (x) and north (z) offsets from the center.
+        const dx = (point.lng - center.lng) * metersPerDegLon;
+        const dz = (point.lat - center.lat) * metersPerDegLat;
+        // Create a small sphere to mark the point.
+        const markerGeometry = new THREE.SphereGeometry(20, 16, 16); // 20m radius sphere
+        const markerMaterial = new THREE.MeshBasicMaterial({ color: 0xff0000 });
+        const marker = new THREE.Mesh(markerGeometry, markerMaterial);
+        // In our custom layer, we define:
+        // x: east offset, y: height (we choose a fixed value, e.g., 50m above the terrain),
+        // z: north offset. (Adjust the sign of dz if needed.)
+        marker.position.set(dx, 50, dz);
+        customLayer.scene.add(marker);
+      });
+    }
+    
+    // When the user clicks the "Generate 3D Slice & Plot Points" button:
+    document.getElementById('generate').addEventListener('click', function() {
+      var lat = parseFloat(document.getElementById('lat').value);
+      var lng = parseFloat(document.getElementById('lng').value);
+      if (isNaN(lat) || isNaN(lng)) {
+        alert("Please enter valid coordinates.");
+        return;
+      }
+      
+      // Recenter the map.
+      map.setCenter([lng, lat]);
+      map.setPitch(60);
+      map.setZoom(14);
+      
+      // Update the custom layer's center property.
+      customLayer.center = { lat: lat, lng: lng };
+      
+      // Remove the previous custom layer if it exists.
+      if (map.getLayer('3d-terrain-slice')) {
+        map.removeLayer('3d-terrain-slice');
+        map.removeSource('3d-terrain-slice');
+      }
+      
+      // Recreate the custom layer with the updated seed.
+      customLayer.onAdd = function(map, gl) {
+        this.scene = new THREE.Scene();
+        this.camera = new THREE.Camera();
+        this.renderer = new THREE.WebGLRenderer({
+          canvas: map.getCanvas(),
+          context: gl,
+          antialias: true
+        });
+        this.renderer.autoClear = false;
+        var size = 10000;
+        var segments = 128;
+        var geometry = new THREE.PlaneGeometry(size, size, segments, segments);
+        geometry.rotateX(-Math.PI / 2);
+        var seed = customLayer.center.lat.toString() + customLayer.center.lng.toString();
+        var simplex = new SimplexNoise(seed);
+        var positions = geometry.attributes.position;
+        var vertex = new THREE.Vector3();
+        for (var i = 0; i < positions.count; i++) {
+          vertex.fromBufferAttribute(positions, i);
+          var u = (vertex.x / size) + 0.5;
+          var v = (vertex.z / size) + 0.5;
+          var elevation = simplex.noise2D(u * 10, v * 10) * 300;
+          vertex.y = elevation;
+          positions.setXYZ(i, vertex.x, vertex.y, vertex.z);
+        }
+        geometry.computeVertexNormals();
+        var material = new THREE.MeshLambertMaterial({
+          color: 0x88cc88,
+          side: THREE.DoubleSide
+        });
+        this.terrainMesh = new THREE.Mesh(geometry, material);
+        this.scene.add(this.terrainMesh);
+        var ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+        this.scene.add(ambientLight);
+        var directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+        directionalLight.position.set(0, 1000, 1000);
+        this.scene.add(directionalLight);
+      };
+      
+      // Add the custom three.js layer to the map.
+      map.addLayer(customLayer);
+      
+      // After the layer is added (and rendered), fetch point data from your Python backend.
+      fetch('/points')
+        .then(response => response.json())
+        .then(points => {
+          // Plot the points on the terrain slice.
+          plotPoints(customLayer.center, points);
+        })
+        .catch(error => {
+          console.error("Error fetching points:", error);
+        });
+    });
+  </script>
+</body>
+</html>
