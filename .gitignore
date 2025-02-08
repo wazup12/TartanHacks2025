@@ -1,1 +1,6 @@
+# Downloaded files
+*.crdownload
+
+# Satellite data
 FireSatelliteData/
+FireSatelliteData/*.tif
