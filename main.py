@@ -1,13 +1,15 @@
 import numpy as np
+import matplotlib
+matplotlib.use('Agg')  # Use non-interactive backend for GIF generation
 import matplotlib.pyplot as plt
 from sklearn.mixture import BayesianGaussianMixture
 from scipy.spatial.distance import euclidean
 from scipy.fftpack import fft2, fftshift
-from mapGenerator import mapGenerator
 import argparse
 import time
 import os
 import sys
+import imageio
 
 ###############################################################################
 #  DP-GMM and TSP functions (as before)
@@ -279,54 +281,42 @@ def check_bounds_component(pos, bounds):
     return np.array([x, y])
 
 ###############################################################################
-#  Live Simulation Loop with Batched Transitions and Component-Bound Random Walks
+#  Simulation Loop for Transparent GIF Generation
 ###############################################################################
-def live_simulation_loop(info_map, nodes, agents, desired_allocation, tsp_order, dgmm, neighbors):
+def simulate_and_save_gif(info_map, nodes, agents, desired_allocation, tsp_order, dgmm, neighbors,
+                          num_time_steps=200, output_file='simulation.gif'):
     """
-    Run the simulation live.
-    
-    At each time-step:
-      - Update any transitioning agents (animate their move toward the target).
-      - If no agent is transitioning, compute current allocation and initiate global transitions
-        (batch) for agents in nodes with surplus.
-      - Non-transitioning agents perform a local random walk restricted to their assigned component.
-      - Positions are explicitly checked against the component’s bounds.
-      - The plot (with DP-GMM contours and TSP overlay) is updated.
-      - The current vs. desired agent distribution per node is printed.
-      - Additionally, after any transition completes, the distribution is printed.
-    
-    The simulation runs until you close the plot window.
+    Run the simulation for a fixed number of time steps and save as a transparent GIF.
+    Only the agents are drawn on a transparent background.
     """
-    plt.ion()
-    fig, ax = plt.subplots(figsize=(8, 8))
+    frames = []
+    # Create a figure with a transparent background.
+    fig, ax = plt.subplots(figsize=(8, 8), facecolor='none')
+    fig.patch.set_alpha(0)
+    ax.set_facecolor('none')
+    
     height, width = info_map.shape
-    transition_speed = 10.0  # Increased transition speed
+    transition_speed = 3.0  # Increased transition speed
 
-    while plt.fignum_exists(fig.number):
+    for t in range(num_time_steps):
         # --- Update transitioning agents ---
         transitioning_agents = [agent for agent in agents if agent.transitioning]
-        transition_completed = False  # flag to indicate if any transition just completed
         if transitioning_agents:
             for agent in transitioning_agents:
                 delta = agent.target_pos - agent.pos
                 dist = np.linalg.norm(delta)
                 if dist < 0.5 or transition_speed >= dist:
-                    # If close enough or step overshoots, complete the transition.
                     agent.pos = agent.target_pos.copy()
                     agent.node_index = agent.target_node
                     agent.local_offset = np.array([0.0, 0.0])
                     agent.transitioning = False
-                    print(f"Transition complete: Agent {agent.agent_type} now at node {agent.node_index}", flush=True)
-                    transition_completed = True
                 else:
                     step = (delta / dist) * transition_speed
                     agent.pos = agent.pos + step
-                    # Check overall boundaries.
                     agent.pos = check_bounds(agent.pos, width, height)
-            # For non-transitioning agents during transitions, perform local random walk within component.
             for agent in agents:
                 if not agent.transitioning:
-                    delta = local_random_walk(agent, step_size=5.0)
+                    delta = local_random_walk(agent, step_size=3)
                     new_offset = agent.local_offset + delta
                     base = nodes[agent.node_index]['mean']
                     new_pos = base + new_offset
@@ -334,19 +324,6 @@ def live_simulation_loop(info_map, nodes, agents, desired_allocation, tsp_order,
                     new_pos = check_bounds_component(new_pos, comp_bounds)
                     agent.local_offset = new_pos - base
                     agent.pos = new_pos
-            # If any transition just completed, print the updated distribution.
-            if transition_completed:
-                current_allocation = {i: {atype: 0 for atype in desired_allocation[i].keys()} for i in range(len(nodes))}
-                for agent in agents:
-                    if not agent.transitioning:
-                        current_allocation[agent.node_index][agent.agent_type] += 1
-                print("\n[After Transition] Agent Distribution per Node:")
-                for i in range(len(nodes)):
-                    print(f"Node {i}:", flush=True)
-                    for agent_type in desired_allocation[i].keys():
-                        curr = current_allocation[i][agent_type]
-                        desired = desired_allocation[i][agent_type]
-                        print(f"  {agent_type}: current = {curr}, desired = {desired:.2f}", flush=True)
         else:
             # --- No agents are transitioning; compute current allocation ---
             current_allocation = {i: {atype: 0 for atype in desired_allocation[i].keys()} for i in range(len(nodes))}
@@ -354,17 +331,8 @@ def live_simulation_loop(info_map, nodes, agents, desired_allocation, tsp_order,
                 if not agent.transitioning:
                     current_allocation[agent.node_index][agent.agent_type] += 1
 
-            # --- Print current vs. desired allocation per node ---
-            print("\nAgent Distribution per Node:")
-            for i in range(len(nodes)):
-                print(f"Node {i}:", flush=True)
-                for agent_type in desired_allocation[i].keys():
-                    curr = current_allocation[i][agent_type]
-                    desired = desired_allocation[i][agent_type]
-                    print(f"  {agent_type}: current = {curr}, desired = {desired:.2f}", flush=True)
-
             # --- Initiate global transitions (batch) for nodes with surplus ---
-            moves = []  # list of tuples (agent, new_node)
+            moves = []
             for i in range(len(nodes)):
                 for agent_type in desired_allocation[i].keys():
                     curr = current_allocation[i][agent_type]
@@ -384,20 +352,16 @@ def live_simulation_loop(info_map, nodes, agents, desired_allocation, tsp_order,
                                     nb_choice = np.random.choice(list(neighbor_defs.keys()),
                                                                  p=np.array(list(neighbor_defs.values())) / total_deficit)
                                     moves.append((agent, nb_choice))
-            if moves:
-                print(f"Initiating {len(moves)} transitions.", flush=True)
-            # Initiate transitions for the selected agents.
             for agent, new_node in moves:
                 agent.transitioning = True
                 agent.start_pos = agent.pos.copy()
                 agent.target_pos = np.array(nodes[new_node]['mean'])
                 agent.target_node = new_node
-                print(f"Agent {agent.agent_type} transitioning from node {agent.node_index} to {new_node}", flush=True)
 
             # --- For non-transitioning agents, update via local random walk within their component ---
             for agent in agents:
                 if not agent.transitioning:
-                    delta = local_random_walk(agent, step_size=5.0)
+                    delta = local_random_walk(agent, step_size=3)
                     new_offset = agent.local_offset + delta
                     base = nodes[agent.node_index]['mean']
                     new_pos = base + new_offset
@@ -406,50 +370,88 @@ def live_simulation_loop(info_map, nodes, agents, desired_allocation, tsp_order,
                     agent.local_offset = new_pos - base
                     agent.pos = new_pos
 
-        # --- Update Plot ---
+        # --- Update Plot: Only agents are drawn on a transparent background ---
         ax.clear()
-        ax.imshow(info_map, cmap='plasma', origin='lower')
-        X, Y = np.meshgrid(np.arange(width), np.arange(height))
-        gaussian_map = np.zeros((height, width))
-        for node in nodes:
-            weight = node['weight']
-            mean = node['mean']
-            cov = node['covariance']
-            try:
-                inv_cov = np.linalg.inv(cov)
-            except np.linalg.LinAlgError:
-                inv_cov = np.linalg.pinv(cov)
-            diff = np.dstack((X - mean[0], Y - mean[1]))
-            exponent = -0.5 * np.einsum('ijk,kl,ijl->ij', diff, inv_cov, diff)
-            gaussian_map += weight * np.exp(exponent)
-        levels = np.linspace(np.min(gaussian_map), np.max(gaussian_map), 15)
-        ax.contour(X, Y, gaussian_map, levels=levels, colors='black', linewidths=1.0)
-
-        # Draw TSP overlay (closed cycle).
-        tsp_cycle = tsp_order + [tsp_order[0]]
-        for i in range(len(tsp_cycle) - 1):
-            p1 = nodes[tsp_cycle[i]]['mean']
-            p2 = nodes[tsp_cycle[i+1]]['mean']
-            ax.plot([p1[0], p2[0]], [p1[1], p2[1]], 'r-', linewidth=2)
-
-        # Plot agents (red for aircraft, blue for trucks).
+        ax.set_facecolor('none')
+        ax.set_xlim(0, width)
+        ax.set_ylim(0, height)
+        ax.axis('off')
+        # Draw agents (red for aircraft, blue for trucks).
         for agent in agents:
             color = 'red' if agent.agent_type == 'aircraft' else 'blue'
             ax.plot(agent.pos[0], agent.pos[1], marker='o', color=color, markersize=6)
-        plt.pause(0.1)
-    plt.ioff()
+
+        # Render the canvas and capture the frame with RGBA channels.
+        fig.canvas.draw()
+        w, h = fig.canvas.get_width_height()
+        # Get the ARGB buffer, then reshape and convert to RGBA.
+        frame = np.frombuffer(fig.canvas.tostring_argb(), dtype=np.uint8)
+        frame = frame.reshape((h, w, 4))
+        frame = frame[:, :, [1, 2, 3, 0]]  # Convert ARGB to RGBA.
+        frames.append(frame)
+
+    plt.close(fig)
+    imageio.mimsave(output_file, frames, duration=0.1)
+    print(f"Saved transparent simulation GIF to {output_file}")
+
+###############################################################################
+#  New Function: Generate a Transparent GIF from an information map over 50 time steps
+###############################################################################
+def generate_simulation_gif(info_map, num_time_steps=50, output_file='simulation.gif'):
+    """
+    Given an information map (a 2D numpy array), this function:
+      - Computes DP-GMM nodes,
+      - Determines a TSP ordering and neighbor relationships,
+      - Sets up default agent counts and sensing parameters,
+      - Computes the desired allocation for each node,
+      - Initializes agents on the map,
+      - Runs the simulation for num_time_steps (default is 50),
+      - And saves the resulting transparent GIF to the provided output_file.
+      
+    Returns the output file name.
+    """
+    # Compute DP-GMM nodes from the info_map.
+    dgmm = DirichletGMM(max_components=10, weight_threshold=1e-3, plot_gaussians=False)
+    nodes = dgmm.fit(info_map)
+
+    # Compute TSP ordering and derive neighbor relationships (closed cycle).
+    tsp_order = dgmm.tsp_path(nodes)
+    neighbors = get_neighbors(tsp_order)
+
+    # Set up default agent counts and sensing parameters.
+    agent_counts = {
+        'aircraft': 5,
+        'truck': 10
+    }
+    agent_sigmas = {
+        'aircraft': 10.0,
+        'truck': 3.0
+    }
+
+    # Compute the desired allocation per node (via spectral matching).
+    desired_allocation = compute_desired_allocation(nodes, agent_counts, agent_sigmas, dgmm)
+
+    # Initialize agents (each assigned to its nearest node initially).
+    agents = initialize_agents(nodes, agent_counts, agent_sigmas)
+
+    # Run the simulation for a fixed number of steps and save as a transparent GIF.
+    simulate_and_save_gif(info_map, nodes, agents, desired_allocation, tsp_order, dgmm, neighbors,
+                            num_time_steps=num_time_steps, output_file=output_file)
+    return output_file
 
 ###############################################################################
 #  Main function (with command-line arguments)
 ###############################################################################
 def main():
-    parser = argparse.ArgumentParser(description="Live Agent Simulation on DP-GMM Nodes")
+    parser = argparse.ArgumentParser(description="Agent Simulation on DP-GMM Nodes with Transparent GIF Output")
     parser.add_argument('--aircraft', type=int, default=5, help="Number of aircraft agents")
     parser.add_argument('--truck', type=int, default=10, help="Number of truck agents")
     parser.add_argument('--aircraft_sigma', type=float, default=10.0, help="Sensing sigma for aircraft")
     parser.add_argument('--truck_sigma', type=float, default=3.0, help="Sensing sigma for trucks")
     parser.add_argument('--map_path', type=str, default=None,
                         help="Path to an image file to use as the map. If not provided, a default Gaussian map is used.")
+    parser.add_argument('--steps', type=int, default=200, help="Number of simulation time steps")
+    parser.add_argument('--output', type=str, default='simulation.gif', help="Output GIF file name")
     args = parser.parse_args()
 
     # If a map path is provided and valid, load the image; otherwise, use the default generator.
@@ -465,35 +467,11 @@ def main():
         print(f"Using map image from {args.map_path}", flush=True)
     else:
         print("No valid map image provided; using default generated map.", flush=True)
-        generator = mapGenerator(100, 100, 5)
-        info_map = generator.generate_map()
+        return
 
-    # Compute DP-GMM nodes from the info_map.
-    dgmm = DirichletGMM(max_components=10, weight_threshold=1e-3, plot_gaussians=False)
-    nodes = dgmm.fit(info_map)
-
-    # Compute TSP ordering and derive neighbor relationships (closed cycle).
-    tsp_order = dgmm.tsp_path(nodes)
-    neighbors = get_neighbors(tsp_order)
-
-    # Set up agent counts and sensing parameters.
-    agent_counts = {
-        'aircraft': args.aircraft,
-        'truck': args.truck
-    }
-    agent_sigmas = {
-        'aircraft': args.aircraft_sigma,
-        'truck': args.truck_sigma
-    }
-
-    # Compute the desired allocation per node (via spectral matching).
-    desired_allocation = compute_desired_allocation(nodes, agent_counts, agent_sigmas, dgmm)
-
-    # Initialize agents (each assigned to its nearest node initially).
-    agents = initialize_agents(nodes, agent_counts, agent_sigmas)
-
-    # Run the live simulation loop (it runs until you close the plot window).
-    live_simulation_loop(info_map, nodes, agents, desired_allocation, tsp_order, dgmm, neighbors)
+    # To generate a transparent GIF using only 50 time steps via our new helper function:
+    output_file = generate_simulation_gif(info_map, num_time_steps=50, output_file=args.output)
+    print(f"Transparent simulation GIF generated: {output_file}")
 
 if __name__ == "__main__":
     main()
