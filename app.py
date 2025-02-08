@@ -133,34 +133,35 @@ def shift_with_zero_padding(arr, shift_row, shift_col):
     ]
     return result
 
+
 def simulate_fire(
     wind_dir,
     wind_mag,
     slope_dir,
     gradient,
     grad_scale,
-    steps=200,  # Increased from 100 to 200 for more time steps
+    steps=250,  # Increased for more gradual spread
     grid_size=500,
-    p_base=0.5,  # Increased from 0.35 to 0.5 to make fire spread more aggressively
+    p_base=0.3,  # Reduced slightly for slower initial fire spread
 ):
     """
-    Runs the fire spread simulation on a grid using a cellular automata model.
+    Runs the fire spread simulation on a grid using a cellular automata model with more random, spaced-out fire expansion.
     Returns:
       states: A list of 2D NumPy arrays (fire masks) for each time step.
     """
     grid = np.zeros((grid_size, grid_size), dtype=int)
     center = grid_size // 2
-    grid[center, center] = 1
+    grid[center, center] = 1  # Start fire in the middle
 
     neighbor_data = [
-        {"offset": (-2, -2), "angle": 315},
-        {"offset": (-2, 0), "angle": 0},
-        {"offset": (-2, 2), "angle": 45},
-        {"offset": (0, -2), "angle": 270},
-        {"offset": (0, 2), "angle": 90},
-        {"offset": (2, -2), "angle": 225},
-        {"offset": (2, 0), "angle": 180},
-        {"offset": (2, 2), "angle": 135},
+        {"offset": (-3, -3), "angle": 315},
+        {"offset": (-3, 0), "angle": 0},
+        {"offset": (-3, 3), "angle": 45},
+        {"offset": (0, -3), "angle": 270},
+        {"offset": (0, 3), "angle": 90},
+        {"offset": (3, -3), "angle": 225},
+        {"offset": (3, 0), "angle": 180},
+        {"offset": (3, 3), "angle": 135},
     ]
 
     for d in neighbor_data:
@@ -175,17 +176,75 @@ def simulate_fire(
         prob_not_ignite = np.ones_like(grid, dtype=float)
         for d in neighbor_data:
             dr, dc = d["offset"]
-            random_multiplier = np.random.uniform(0.3, 2.0, size=grid.shape)  # More randomness in fire spread
+            random_multiplier = np.random.uniform(0.1, 2.5, size=grid.shape)  # Greater variability in randomness
             effective_p_dir = np.clip(d["p"] * random_multiplier, 0, 1)
             shifted = shift_with_zero_padding(grid, dr, dc)
             factor = np.where(shifted == 1, 1 - effective_p_dir, 1.0)
             prob_not_ignite *= factor
+
         prob_ignite = 1 - prob_not_ignite
         random_vals = np.random.random(size=grid.shape)
         new_fires = (grid == 0) & (random_vals < prob_ignite)
         grid[new_fires] = 1
+
         states.append(grid.copy())
+
     return states
+
+
+# def simulate_fire(
+#     wind_dir,
+#     wind_mag,
+#     slope_dir,
+#     gradient,
+#     grad_scale,
+#     steps=200,  # Increased from 100 to 200 for more time steps
+#     grid_size=500,
+#     p_base=0.5,  # Increased from 0.35 to 0.5 to make fire spread more aggressively
+# ):
+#     """
+#     Runs the fire spread simulation on a grid using a cellular automata model.
+#     Returns:
+#       states: A list of 2D NumPy arrays (fire masks) for each time step.
+#     """
+#     grid = np.zeros((grid_size, grid_size), dtype=int)
+#     center = grid_size // 2
+#     grid[center, center] = 1
+
+#     neighbor_data = [
+#         {"offset": (-2, -2), "angle": 315},
+#         {"offset": (-2, 0), "angle": 0},
+#         {"offset": (-2, 2), "angle": 45},
+#         {"offset": (0, -2), "angle": 270},
+#         {"offset": (0, 2), "angle": 90},
+#         {"offset": (2, -2), "angle": 225},
+#         {"offset": (2, 0), "angle": 180},
+#         {"offset": (2, 2), "angle": 135},
+#     ]
+
+#     for d in neighbor_data:
+#         theta = d["angle"]
+#         wind_factor = 1 + wind_mag * np.cos(np.deg2rad(theta - wind_dir))
+#         slope_factor = 1 - grad_scale * gradient * np.cos(np.deg2rad(theta - slope_dir))
+#         p_dir = p_base * wind_factor * slope_factor
+#         d["p"] = np.clip(p_dir, 0, 1)
+
+#     states = [grid.copy()]
+#     for t in range(steps):
+#         prob_not_ignite = np.ones_like(grid, dtype=float)
+#         for d in neighbor_data:
+#             dr, dc = d["offset"]
+#             random_multiplier = np.random.uniform(0.3, 2.0, size=grid.shape)  # More randomness in fire spread
+#             effective_p_dir = np.clip(d["p"] * random_multiplier, 0, 1)
+#             shifted = shift_with_zero_padding(grid, dr, dc)
+#             factor = np.where(shifted == 1, 1 - effective_p_dir, 1.0)
+#             prob_not_ignite *= factor
+#         prob_ignite = 1 - prob_not_ignite
+#         random_vals = np.random.random(size=grid.shape)
+#         new_fires = (grid == 0) & (random_vals < prob_ignite)
+#         grid[new_fires] = 1
+#         states.append(grid.copy())
+#     return states
 
 
 # def simulate_fire(
