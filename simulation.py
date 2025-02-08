@@ -1,32 +1,3 @@
-#!/usr/bin/env python3
-"""
-simulate_fire_with_satellite_augmented_mlp_3d.py
-
-This script demonstrates an end-to-end pipeline that:
-  1. Loads satellite images of the 2025 LA fires from a folder.
-  2. Augments the dataset by generating intermediate images (via linear interpolation and Gaussian noise).
-  3. Processes the images to obtain binary fire masks using Otsu thresholding.
-  4. Fetches real hourly wind data for Los Angeles using Meteostat.
-  5. Loads terrain data from a GeoTIFF.
-  6. Constructs a dataset for an MLP where:
-         Input  = [flattened current fire mask, wind vector (2 features), flattened terrain]
-         Target = flattened fire mask at the next time step.
-  7. Trains an MLP to predict fire spread.
-  8. Uses the trained MLP to iteratively predict a fire series.
-  9. Animates the predicted fire evolution in 3D over the terrain.
-
-Dependencies:
-  - meteostat (pip install meteostat)
-  - pandas
-  - numpy
-  - torch
-  - matplotlib
-  - rasterio
-  - scikit-image
-  - tqdm
-  - scipy
-"""
-
 from datetime import datetime, timedelta
 import glob
 import numpy as np
@@ -39,6 +10,7 @@ import matplotlib.pyplot as plt
 import rasterio
 from skimage.transform import resize
 from skimage.filters import threshold_otsu
+from skimage.morphology import erosion, square
 from tqdm import tqdm
 from scipy.ndimage import binary_dilation
 from mpl_toolkits.mplot3d import Axes3D  # For 3D plotting
@@ -51,17 +23,17 @@ from meteostat import Point, Hourly
 # Parameters and Settings
 # ----------------------------
 GRID_HEIGHT = 128
-GRID_WIDTH = 320
+GRID_WIDTH = 256
 
 # Augmentation parameters
 NUM_INTERMEDIATE = (
-    2  # Number of intermediate images to generate between consecutive frames
+    10  # number of intermediate images to generate between consecutive frames
 )
-NOISE_SIGMA = 0.05  # Standard deviation of Gaussian noise
+NOISE_SIGMA = 0.1  # standard deviation of Gaussian noise
 
 # Training parameters
-BATCH_SIZE = 8
-NUM_EPOCHS = 20
+BATCH_SIZE = 5
+NUM_EPOCHS = 100
 LEARNING_RATE = 0.001
 
 RANDOM_SEED = 42
@@ -70,14 +42,43 @@ torch.manual_seed(RANDOM_SEED)
 
 
 # ----------------------------
-# Step 1. Load and Augment Satellite Images
+# New Functions for Canopy and Slope
+# ----------------------------
+def load_canopy_data(
+    filepath: str, target_shape: tuple = (GRID_HEIGHT, GRID_WIDTH)
+) -> np.ndarray:
+    """
+    Load canopy data from a GeoTIFF file, normalize it to [0,1], and resize.
+    Assumes the canopy values are given as percentages (0-100).
+    """
+    with rasterio.open(filepath) as src:
+        canopy = src.read(1)
+    canopy = canopy / 100.0
+    if canopy.shape != target_shape:
+        canopy = resize(canopy, target_shape, anti_aliasing=True)
+    return canopy.astype(np.float32)
+
+
+def compute_slope(terrain: np.ndarray) -> np.ndarray:
+    """
+    Compute the slope from the terrain data using gradients.
+    Normalize the slope to [0,1] for use as an input feature.
+    """
+    dy, dx = np.gradient(terrain)
+    slope = np.sqrt(dx**2 + dy**2)
+    slope_norm = (slope - slope.min()) / (slope.max() - slope.min() + 1e-8)
+    return slope_norm.astype(np.float32)
+
+
+# ----------------------------
+# Step 1. Load and Augment Satellite Images (Fire Masks)
 # ----------------------------
 def load_satellite_fire_mask(
     filepath: str, target_shape: tuple = (GRID_HEIGHT, GRID_WIDTH)
 ) -> np.ndarray:
     """
-    Load a satellite image from a GeoTIFF file and convert it into a binary fire mask.
-    Uses Otsu thresholding.
+    Load a satellite image from a GeoTIFF file and convert it into a binary fire mask
+    using Otsu thresholding.
     """
     with rasterio.open(filepath) as src:
         image = src.read(1)
@@ -114,15 +115,11 @@ def load_and_augment_satellite_fire_series(
         augmented_series.append(img1)  # include the first image of the pair
         for j in range(1, num_intermediate + 1):
             alpha = j / (num_intermediate + 1)
-            # Linear interpolation between img1 and img2
             interpolated = (1 - alpha) * img1 + alpha * img2
-            # Add Gaussian noise
             noisy = interpolated + np.random.normal(0, noise_sigma, interpolated.shape)
             noisy = np.clip(noisy, 0, 1)
-            # Binarize the result using a threshold of 0.5
             binary_noisy = (noisy > 0.5).astype(np.uint8)
             augmented_series.append(binary_noisy)
-    # Append the last original image
     augmented_series.append(original_series[-1])
     return np.array(augmented_series)
 
@@ -141,9 +138,8 @@ def get_wind_data(start: datetime, num_steps: int) -> np.ndarray:
     df = data.fetch().iloc[:num_steps]
     wind_vectors = []
     for _, row in df.iterrows():
-        wspd = row["wspd"]  # wind speed in m/s
-        wdir = row["wdir"]  # wind direction (from which wind comes, in degrees)
-        # Convert to blowing direction by adding 180° (modulo 360)
+        wspd = row["wspd"]
+        wdir = row["wdir"]
         effective_dir = (wdir + 180) % 360
         rad = np.deg2rad(effective_dir)
         dx = wspd * np.sin(rad)
@@ -155,7 +151,7 @@ def get_wind_data(start: datetime, num_steps: int) -> np.ndarray:
 
 
 # ----------------------------
-# Step 3. Load Terrain Data
+# Step 3. Load Terrain and Canopy Data; Compute Slope
 # ----------------------------
 def load_terrain_data(
     filepath: str, target_shape: tuple = (GRID_HEIGHT, GRID_WIDTH)
@@ -177,22 +173,32 @@ def load_terrain_data(
 class FirePredictionDataset(Dataset):
     """
     Each sample is:
-       Input = [flattened current fire mask, wind vector (2 features), flattened terrain]
+       Input = [flattened current fire mask, wind vector (2), flattened terrain,
+                flattened canopy, flattened slope]
        Target = flattened fire mask at time t+1.
     """
 
     def __init__(
-        self, fire_series: np.ndarray, terrain: np.ndarray, wind_data: np.ndarray
+        self,
+        fire_series: np.ndarray,
+        terrain: np.ndarray,
+        canopy: np.ndarray,
+        slope: np.ndarray,
+        wind_data: np.ndarray,
     ):
         self.inputs = []
         self.targets = []
         num_samples = fire_series.shape[0] - 1
         H, W = terrain.shape
         terrain_flat = terrain.flatten().astype(np.float32)
+        canopy_flat = canopy.flatten().astype(np.float32)
+        slope_flat = slope.flatten().astype(np.float32)
         for t in range(num_samples):
             fire_flat = fire_series[t].astype(np.float32).flatten()
-            wind_vector = wind_data[t]  # dynamic wind vector for time step t
-            input_features = np.concatenate([fire_flat, wind_vector, terrain_flat])
+            wind_vector = wind_data[t]
+            input_features = np.concatenate(
+                [fire_flat, wind_vector, terrain_flat, canopy_flat, slope_flat]
+            )
             target_flat = fire_series[t + 1].astype(np.float32).flatten()
             self.inputs.append(input_features)
             self.targets.append(target_flat)
@@ -255,13 +261,15 @@ def predict_fire_series(
     model: nn.Module,
     initial_fire: np.ndarray,
     terrain: np.ndarray,
+    canopy: np.ndarray,
+    slope: np.ndarray,
     wind_data: np.ndarray,
     num_timesteps: int,
 ) -> np.ndarray:
     """
     Starting from an initial fire mask, use the trained MLP iteratively to predict
-    the fire evolution over num_timesteps. For each time step, the corresponding wind
-    vector from wind_data is used.
+    the fire evolution over num_timesteps. The input features include the static terrain,
+    canopy, slope, and the dynamic wind vector.
 
     Returns:
         predicted_series: Array of shape (num_timesteps, H, W) with binary predictions.
@@ -271,12 +279,16 @@ def predict_fire_series(
     current_fire = initial_fire.copy()
     predicted_series.append(current_fire.copy())
     terrain_flat = terrain.flatten().astype(np.float32)
+    canopy_flat = canopy.flatten().astype(np.float32)
+    slope_flat = slope.flatten().astype(np.float32)
     device = next(model.parameters()).device
 
     for t in range(1, num_timesteps):
         fire_flat = current_fire.astype(np.float32).flatten()
         wind_vector = wind_data[t]  # use wind vector for time step t
-        input_features = np.concatenate([fire_flat, wind_vector, terrain_flat])
+        input_features = np.concatenate(
+            [fire_flat, wind_vector, terrain_flat, canopy_flat, slope_flat]
+        )
         input_tensor = (
             torch.tensor(input_features, dtype=torch.float32).unsqueeze(0).to(device)
         )
@@ -299,34 +311,29 @@ def animate_fire_on_3d(
     z_offset: float = 0.0,
     marker_size: int = 5,
     max_points: int = 300,
-    elevation_scale: float = 200.0,
+    elevation_scale: float = 2.0,
 ):
     """
     Create a 3D animation of the predicted fire spread over the terrain,
-    scaling the elevation to make height differences more pronounced.
+    scaling the elevation to exaggerate differences.
 
     Args:
         terrain (np.ndarray): 2D elevation array.
         fire_series (np.ndarray): Array of shape (num_timesteps, H, W) representing fire masks.
         interval (int): Delay between frames in milliseconds.
-        z_offset (float): Vertical offset for the markers (set to 0.0 to place markers exactly on the terrain).
+        z_offset (float): Vertical offset for markers (0.0 places them exactly on the terrain).
         marker_size (int): Size of the markers.
         max_points (int): Maximum number of fire points to display per frame.
-        elevation_scale (float): Factor to multiply the terrain elevations by.
-                                  (Values >1.0 exaggerate elevation differences.)
+        elevation_scale (float): Factor to scale the terrain elevation.
     """
     H, W = terrain.shape
-    # Apply elevation scaling
     scaled_terrain = terrain * elevation_scale
-
-    # Create coordinate arrays using integer indices.
     x = np.arange(W)
     y = np.arange(H)
     X, Y = np.meshgrid(x, y)
 
     fig = plt.figure(figsize=(12, 8))
     ax = fig.add_subplot(111, projection="3d")
-    # Plot the scaled terrain surface.
     surf = ax.plot_surface(
         X, Y, scaled_terrain, cmap="terrain", alpha=0.7, linewidth=0, antialiased=True
     )
@@ -334,11 +341,9 @@ def animate_fire_on_3d(
 
     def get_scatter_data(fire_mask):
         indices = np.where(fire_mask)
-        xs = indices[1]  # columns correspond to x
-        ys = indices[0]  # rows correspond to y
-        # Use the scaled terrain for the z-coordinate.
+        xs = indices[1]
+        ys = indices[0]
         zs = scaled_terrain[indices] + z_offset
-        # Downsample if there are too many points.
         if len(xs) > max_points:
             sample_indices = np.random.choice(len(xs), size=max_points, replace=False)
             xs = xs[sample_indices]
@@ -346,7 +351,6 @@ def animate_fire_on_3d(
             zs = zs[sample_indices]
         return xs, ys, zs
 
-    # Initial fire overlay.
     fire0 = fire_series[0]
     xs, ys, zs = get_scatter_data(fire0)
     sc = ax.scatter(xs, ys, zs, c="r", marker="o", s=marker_size)
@@ -366,10 +370,7 @@ def animate_fire_on_3d(
     ani = animation.FuncAnimation(
         fig, update, frames=fire_series.shape[0], interval=interval, blit=False
     )
-
-    # Set aspect ratio so that x and y dimensions match your data.
-    ax.set_box_aspect((W, H, np.ptp(scaled_terrain)))  # Requires Matplotlib 3.3+
-
+    ax.set_box_aspect((W, H, np.ptp(scaled_terrain)))
     plt.show()
 
 
@@ -382,14 +383,23 @@ def main():
     satellite_folder = "FireSatelliteData"
     # Path to terrain GeoTIFF.
     terrain_filepath = "output_GEBCOIceTopo.tif"
+    # Path to canopy GeoTIFF.
+    canopy_filepath = "output_GEBCOIceTopo.tif"
     # Start time for wind data.
     wind_start = datetime(2025, 1, 1)
 
-    # --- Load Terrain ---
+    # --- Load Terrain and Canopy ---
     terrain = load_terrain_data(
         terrain_filepath, target_shape=(GRID_HEIGHT, GRID_WIDTH)
     )
     print("Terrain loaded. Shape:", terrain.shape)
+
+    canopy = load_canopy_data(canopy_filepath, target_shape=(GRID_HEIGHT, GRID_WIDTH))
+    print("Canopy data loaded. Shape:", canopy.shape)
+
+    # Compute slope from terrain.
+    slope = compute_slope(terrain)
+    print("Slope computed. Shape:", slope.shape)
 
     # --- Load and Augment Satellite Fire Series ---
     fire_series = load_and_augment_satellite_fire_series(
@@ -401,18 +411,18 @@ def main():
     print("Augmented satellite fire series loaded. Shape:", fire_series.shape)
 
     # --- Fetch Wind Data ---
-    # The number of wind steps should match the number of fire images.
     wind_data = get_wind_data(wind_start, fire_series.shape[0])
     print("Wind data fetched. Shape:", wind_data.shape)
 
     # --- Build Dataset and DataLoader ---
     # Use wind_data[0:-1] since each sample uses time t (input) and t+1 (target).
-    dataset = FirePredictionDataset(fire_series, terrain, wind_data[:-1])
+    dataset = FirePredictionDataset(fire_series, terrain, canopy, slope, wind_data[:-1])
     dataloader = DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=True)
 
     H, W = terrain.shape
-    input_dim = H * W + 2 + H * W  # flattened fire mask + wind (2) + flattened terrain
-    output_dim = H * W  # next fire mask (flattened)
+    # Input dimension: fire mask (H*W) + wind (2) + terrain (H*W) + canopy (H*W) + slope (H*W)
+    input_dim = H * W + 2 + H * W + H * W + H * W
+    output_dim = H * W
     hidden_dim = 256
 
     model = FireMLP(input_dim, hidden_dim, output_dim)
@@ -443,15 +453,25 @@ def main():
     plt.show()
 
     # --- Use the Trained MLP for Iterative Prediction ---
-    initial_fire = fire_series[0].astype(np.uint8)
+    # Instead of starting with the satellite image fire mask, we initialize with a single ignition point.
+    initial_fire = np.zeros((H, W), dtype=np.uint8)
+    # Set the center cell to 1 (or choose another cell as needed).
+    initial_fire[H // 2, W // 2] = 1
+
     predicted_series = predict_fire_series(
-        model, initial_fire, terrain, wind_data, fire_series.shape[0]
+        model, initial_fire, terrain, canopy, slope, wind_data, fire_series.shape[0]
     )
     print("Predicted fire series shape:", predicted_series.shape)
 
     # --- 3D Visualization of the Predicted Fire Series ---
     animate_fire_on_3d(
-        terrain, predicted_series, interval=200, z_offset=0.0, marker_size=5
+        terrain,
+        predicted_series,
+        interval=200,
+        z_offset=0.1,
+        marker_size=5,
+        elevation_scale=100.0,
+        max_points=1000,
     )
 
 
