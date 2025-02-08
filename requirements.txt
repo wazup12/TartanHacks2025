@@ -6,4 +6,4 @@ opencv-python
 requests
 urllib3
 timm
-
+flask-cors

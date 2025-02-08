@@ -15,8 +15,10 @@ from urllib3 import Retry
 import cv2
 from requests.adapters import HTTPAdapter
 from flask import Flask, request, Response, jsonify
+from flask_cors import CORS
 
 app = Flask(__name__)
+CORS(app)
 
 # ------------------------------------------------------------------------------
 # Global Model Loading (runs once at startup)
