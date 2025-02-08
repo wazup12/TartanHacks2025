@@ -128,6 +128,10 @@ def graph_to_heatmap_image(G, blur_kernel_size=(15, 15), blur_sigma=0):
     # Apply a Gaussian blur to the entire image.
     blurred_img = cv2.GaussianBlur(img, blur_kernel_size, blur_sigma)
 
+    success = cv2.imwrite("test.jpg", blurred_img)
+    if not success:
+        raise IOError(f"Could not write image to")
+
     return blurred_img
 
 def fetch_street_network(lat, lon, dist=100):

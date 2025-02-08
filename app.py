@@ -54,8 +54,21 @@ def gen_gif():
         # inject function here
         heatmap_graph = graph_to_heatmap_image(street_graph)
 
+
+
+        if os.path.exists("test.jpg"):
+            info_map = plt.imread("test.jpg")
+        # If the image is colored (has 3 or 4 channels), convert to grayscale.
+        if info_map.ndim == 3:
+            info_map = np.mean(info_map, axis=2)
+        # Normalize the image (if needed)
+        info_map = info_map.astype(np.float32)
+        if info_map.max() > 1:
+            info_map = info_map / 255.0
+        print(f"Using map image from ", flush=True)
+
         # generate_simulation_gif(info_map, num_time_steps=50, output_file='simulation.gif'):
-        generate_simulation_gif(heatmap_graph, output_file=f"static/{place}_sim.gif")
+        generate_simulation_gif(info_map, output_file=f"static/{place}_sim.gif")
         return jsonify({
             "latitude": lat,
             "longitude": lon,
