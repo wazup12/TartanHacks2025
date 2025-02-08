@@ -46,9 +46,9 @@ def get_coordinates():
 @app.route('/static/<filename>')
 def get_map_image(filename):
     response = make_response(send_from_directory("static", filename))
-    response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
-    response.headers["Pragma"] = "no-cache"
-    response.headers["Expires"] = "0"
+    # response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    # response.headers["Pragma"] = "no-cache"
+    # response.headers["Expires"] = "0"
     return response
 
 if __name__ == '__main__':

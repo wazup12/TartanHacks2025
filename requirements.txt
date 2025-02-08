@@ -1,0 +1,7 @@
+osmnx
+numpy
+networkx
+matplotlib
+opencv-python
+scipy
+flask

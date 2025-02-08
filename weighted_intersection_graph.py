@@ -81,12 +81,16 @@ def draw_streets(edges, geo_to_pixel, image_size):
     
     return road_img, overlay_img
 
-def save_images(road_img, intersection_img, overlay_img):
-    cv2.imwrite("static/road_map.png", road_img)
-    cv2.imwrite("static/intersection_map.png", intersection_img)
-    cv2.imwrite("static/overlay.png", overlay_img)
+def save_images(road_img, intersection_img, overlay_img, dir="static/", place=""):
+    rpath = f"{dir}{place}_road.png"
+    ipath = f"{dir}{place}_intersect.png"
+    opath = f"{dir}{place}_overlay.png"
+    cv2.imwrite(rpath, road_img)
+    cv2.imwrite(ipath, intersection_img)
+    cv2.imwrite(opath, overlay_img)
+    return rpath, ipath, opath
 
-def create_street_and_intersection_maps(lat, lon, image_size=(800, 800), dist=1000, scale=1.0, intersection_radius=5):
+def create_street_and_intersection_maps(lat, lon, image_size=(800, 800), dist=1000, scale=1.0, intersection_radius=5, place=""):
     try:
         edges, nodes, bounds = fetch_street_network(lat, lon, dist)
         geo_to_pixel = create_coordinate_transformer(bounds, image_size, scale)
@@ -98,8 +102,8 @@ def create_street_and_intersection_maps(lat, lon, image_size=(800, 800), dist=10
             intersection_img, intersections = intersection_future.result()
 
         overlay_img = cv2.addWeighted(road_img, 1, intersection_img, 1, 0)
-        save_images(road_img, intersection_img, overlay_img)
-        return intersections
+        a, b, c = save_images(road_img, intersection_img, overlay_img, place=place)
+        return intersections, a, b, c
     except Exception as e:
         print(f"Error generating maps: {str(e)}")
         return None
@@ -115,8 +119,12 @@ if __name__ == "__main__":
     lat, lon = location_data
     
     start = time.time()
-    intersections = create_street_and_intersection_maps(lat, lon, intersection_radius=3, dist=5000)
-    image_filenames = ["road_map.png", "intersection_map.png", "overlay.png"]
+    a = create_street_and_intersection_maps(lat, lon, intersection_radius=3, dist=5000)
+    if not a:
+        print(json.dumps({'error': 'something went wrong :('}))
+
+    intersections = a[0]
+    image_filenames = a[1], a[2], a[3]
     
     if intersections:
         edges, nodes, bounds = fetch_street_network(lat, lon, dist=5000)
@@ -126,4 +134,4 @@ if __name__ == "__main__":
     # plot_color_graph(street_graph)
     # image_filenames.append("street_graph.png")
     
-    print(json.dumps({'place_name': place_name, 'latitude': lat, 'longitude': lon, 'execution_time': round(end - start, 2), 'map_images': [f"/static/{img}" for img in image_filenames]}))
+    print(json.dumps({'place_name': place_name, 'latitude': lat, 'longitude': lon, 'execution_time': round(end - start, 2), 'map_images': image_filenames}))
