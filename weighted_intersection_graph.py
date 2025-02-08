@@ -77,7 +77,7 @@ def draw_streets(edges, geo_to_pixel, image_size):
     for _, row in edges.iterrows():
         coords = np.array([geo_to_pixel(lon, lat) for lon, lat in row.geometry.coords], dtype=np.int32)
         cv2.polylines(road_img, [coords], isClosed=False, color=255, thickness=1)
-        cv2.polylines(overlay_img, [coords], isClosed=False, color=(255, 255, 255), thickness=1)
+        cv2.polylines(overlay_img, [coords], isClosed=False, color=(255, 28, 62), thickness=1)
     
     return road_img, overlay_img
 
