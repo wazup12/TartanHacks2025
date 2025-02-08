@@ -310,7 +310,6 @@ def get_simulation_json_for_coords(lat, lon, wind_dir=45, wind_mag=0.5):
             cell_lat = lat + (center - i) * meter_to_deg_lat
             cell_lon = lon + (j - center) * meter_to_deg_lon
             new_positions.append([round(cell_lat, 6), round(cell_lon, 6)])
-        new_positions = new_positions[::2]
         time_series_positions.append(new_positions)
 
     result = {
