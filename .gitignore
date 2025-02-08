@@ -1,7 +1,0 @@
-# Downloaded files
-*.crdownload
-
-# Satellite data
-FireSatelliteData/
-FireSatelliteData/*.tif
-.DS_Store
